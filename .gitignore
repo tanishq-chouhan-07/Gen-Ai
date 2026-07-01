@@ -1,0 +1,26 @@
+# Virtual environment
+venv/
+.venv/
+
+# Environment variables (NEVER commit this)
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# VS Code
+.vscode/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build
+dist/
+build/
+*.egg-info/
