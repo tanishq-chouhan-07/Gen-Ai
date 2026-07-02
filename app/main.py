@@ -1,22 +1,4 @@
 # app/main.py
-"""
-Application Entry Point
-
-This file:
-1. Creates the FastAPI application
-2. Registers all middleware (in the correct order)
-3. Registers all exception handlers
-4. Registers all routers
-5. Handles startup and shutdown
-
-Middleware execution order (outermost to innermost):
-    Request  → TimingMiddleware → CorrelationIDMiddleware → RequestIDMiddleware → Router
-    Response ← TimingMiddleware ← CorrelationIDMiddleware ← RequestIDMiddleware ← Router
-
-IMPORTANT: Middleware added LAST runs FIRST on requests.
-So we add RequestIDMiddleware last → it runs first → sets the ID
-before CorrelationIDMiddleware and TimingMiddleware need it.
-"""
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,101 +16,100 @@ from app.middleware.error_handler import (
     http_exception_handler,
     validation_exception_handler,
 )
+from app.db.database import create_all_tables, close_database
+from app.db.redis_client import check_redis_connection, close_redis
+from app.db.qdrant_client import ensure_collection_exists, close_qdrant
 from app.api.v1.routers import health
 
-# ── Setup logging before anything else ───────────────────────
-# This must be the first thing that runs
 setup_logging()
 logger = structlog.get_logger()
 settings = get_settings()
 
 
-# ── Application Lifespan ─────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Startup and shutdown lifecycle manager.
-    Add startup checks here as we build more phases.
+    Application startup and shutdown.
+    Every infrastructure connection is established here.
     """
-    # ── STARTUP ──────────────────────────────────────────────
     logger.info(
         "Application starting",
         app_name=settings.app_name,
         version=settings.app_version,
         environment=settings.environment,
         llm_provider=settings.llm_provider,
-        model=settings.gemini_model,
     )
+    logger.info("Initializing database tables...")
+    try:
+        await create_all_tables()
+        logger.info("Database tables ready")
+    except Exception as e:
+        logger.error("Database initialization failed", error=str(e))
+        raise  # Cannot start without database
+    logger.info("Checking Redis connection...")
+    redis_ok, redis_detail = await check_redis_connection()
+    if redis_ok:
+        logger.info("Redis connected", detail=redis_detail)
+    else:
+        logger.warning("Redis not available", detail=redis_detail)
 
-    logger.info("All startup checks passed. Ready to serve requests.")
+    logger.info("Initializing Qdrant collection...")
+    try:
+        await ensure_collection_exists()
+        logger.info("Qdrant collection ready")
+    except Exception as e:
+        logger.warning("Qdrant initialization failed", error=str(e))
 
-    yield  # ← Application runs here
+    logger.info("=" * 50)
+    logger.info("Application ready to serve requests")
+    logger.info("=" * 50)
 
-    # ── SHUTDOWN ─────────────────────────────────────────────
-    logger.info("Application shutting down gracefully")
+    yield  
+
+    logger.info("Application shutting down...")
+    await close_database()
+    await close_redis()
+    await close_qdrant()
+    logger.info("Shutdown complete")
 
 
-# ── Application Factory ───────────────────────────────────────
 def create_app() -> FastAPI:
-    """
-    Creates and fully configures the FastAPI application.
-
-    Using a factory function (instead of module-level app = FastAPI())
-    makes testing easier - tests can call create_app() to get a fresh instance.
-    """
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        description=(
-            "Enterprise AI assistant for company document Q&A. "
-            "Upload PDFs, ask questions, get grounded answers with citations."
-        ),
+        description="Enterprise AI assistant for company document Q&A",
         docs_url="/docs",
         redoc_url="/redoc",
         lifespan=lifespan,
     )
 
-    # ── CORS Middleware ───────────────────────────────────────
-    # Must be added before our custom middleware
+    # ── CORS ──────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],      # Tighten in production
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=[          # These headers are visible to browser JS
+        expose_headers=[
             "X-Request-ID",
             "X-Correlation-ID",
             "X-Process-Time-Ms",
         ],
     )
 
-    app.add_middleware(TimingMiddleware)           # runs 3rd on request
-    app.add_middleware(CorrelationIDMiddleware)    # runs 2nd on request
-    app.add_middleware(RequestIDMiddleware)        # runs 1st on request
+    # ── Custom Middleware (last added = first to run) ──────────
+    app.add_middleware(TimingMiddleware)
+    app.add_middleware(CorrelationIDMiddleware)
+    app.add_middleware(RequestIDMiddleware)
 
     # ── Exception Handlers ────────────────────────────────────
-    # Order matters: more specific handlers first
-    app.add_exception_handler(
-        RequestValidationError,
-        validation_exception_handler,
-    )
-    app.add_exception_handler(
-        StarletteHTTPException,
-        http_exception_handler,
-    )
-    app.add_exception_handler(
-        Exception,
-        global_exception_handler,
-    )
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    app.add_exception_handler(Exception, global_exception_handler)
 
-    # ── API Routers ───────────────────────────────────────────
+    # ── Routers ───────────────────────────────────────────────
     app.include_router(health.router, prefix="/api/v1")
 
-    logger.info("Application factory complete")
     return app
 
-
-# ── App Instance ─────────────────────────────────────────────
-# uvicorn app.main:app uses this
 app = create_app()

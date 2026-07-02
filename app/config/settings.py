@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379"
     session_ttl_seconds: int = 3600
 
+    database_url: str = Field(
+        default="postgresql+asyncpg://docai_user:docai_password@localhost:5432/docai_db",
+        alias="DATABASE_URL",
+    )
+
     max_file_size_mb: int = 50
     chunk_size: int = 512
     chunk_overlap: int = 128
