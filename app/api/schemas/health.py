@@ -11,6 +11,7 @@ class HealthResponse(BaseModel):
     version: str
     environment: str
     timestamp: datetime
+    request_id: str = ""
 
 
 class ComponentStatus(BaseModel):
@@ -25,3 +26,18 @@ class ReadinessResponse(BaseModel):
     status: Literal["ready", "not_ready"]
     components: list[ComponentStatus]
     timestamp: datetime
+    request_id: str = ""
+
+
+class ErrorDetail(BaseModel):
+    """Structured error response."""
+    message: str
+    error_type: str = ""
+    request_id: str = ""
+    retry_recommended: bool = False
+    details: list[dict] = []
+
+
+class ErrorResponse(BaseModel):
+    """Top-level error response wrapper."""
+    error: ErrorDetail

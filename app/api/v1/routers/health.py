@@ -3,8 +3,13 @@ from fastapi import APIRouter
 from datetime import datetime, timezone
 import structlog
 
-from app.api.schemas.health import HealthResponse, ReadinessResponse, ComponentStatus
+from app.api.schemas.health import (
+    HealthResponse,
+    ReadinessResponse,
+    ComponentStatus,
+)
 from app.config.settings import get_settings
+from app.utils.context import get_request_id, get_correlation_id
 
 router = APIRouter(prefix="/health", tags=["Health"])
 logger = structlog.get_logger()
@@ -14,16 +19,24 @@ logger = structlog.get_logger()
     "",
     response_model=HealthResponse,
     summary="Liveness Check",
-    description="Basic check that the application is running. Used by load balancers.",
+    description=(
+        "Basic check that the application process is alive. "
+        "Used by load balancers and container orchestration. "
+        "Does NOT check external dependencies."
+    ),
 )
 async def health_check() -> HealthResponse:
     """
     Liveness endpoint.
-    If this returns 200, the application process is alive.
-    Does NOT check dependencies (database, Qdrant, etc.)
+    Returns 200 as long as the app process is running.
     """
     settings = get_settings()
-    logger.debug("Health check requested")
+    request_id = get_request_id()
+
+    logger.debug(
+        "Health check requested",
+        request_id=request_id,
+    )
 
     return HealthResponse(
         status="healthy",
@@ -31,6 +44,7 @@ async def health_check() -> HealthResponse:
         version=settings.app_version,
         environment=settings.environment,
         timestamp=datetime.now(timezone.utc),
+        request_id=request_id,
     )
 
 
@@ -38,40 +52,52 @@ async def health_check() -> HealthResponse:
     "/ready",
     response_model=ReadinessResponse,
     summary="Readiness Check",
-    description="Checks if the application is ready to serve traffic.",
+    description=(
+        "Checks if the application is ready to serve traffic. "
+        "Verifies configuration is valid. "
+        "In later phases: will check Qdrant, Redis, and Database."
+    ),
 )
 async def readiness_check() -> ReadinessResponse:
     """
     Readiness endpoint.
-    Checks that all critical dependencies are reachable.
-    Returns 200 only when the app can actually serve requests.
-    
-    In Phase 1 we only check the app itself.
-    In later phases we will add Qdrant, Redis, and DB checks.
+    Currently checks configuration only.
+    Will be expanded in Phase 3 to check all dependencies.
     """
     settings = get_settings()
+    request_id = get_request_id()
     components = []
     all_ready = True
 
-    # App configuration check
-    config_ok = bool(settings.app_name and settings.llm_provider)
+    # ── Check 1: Configuration ────────────────────────────────
+    api_key_present = bool(settings.gemini_api_key)
+    config_healthy = bool(settings.app_name and settings.llm_provider)
+
     components.append(ComponentStatus(
         name="configuration",
-        status="healthy" if config_ok else "unhealthy",
-        details=f"Provider: {settings.llm_provider}, Model: {settings.gemini_model}",
+        status="healthy" if config_healthy else "unhealthy",
+        details=(
+            f"Provider: {settings.llm_provider} | "
+            f"Model: {settings.gemini_model} | "
+            f"API Key: {'present' if api_key_present else 'MISSING'}"
+        ),
     ))
 
-    if not config_ok:
+    if not config_healthy:
         all_ready = False
 
+    # ── Log the readiness check ───────────────────────────────
     logger.info(
         "Readiness check completed",
         status="ready" if all_ready else "not_ready",
         component_count=len(components),
+        request_id=request_id,
+        correlation_id=get_correlation_id(),
     )
 
     return ReadinessResponse(
         status="ready" if all_ready else "not_ready",
         components=components,
         timestamp=datetime.now(timezone.utc),
+        request_id=request_id,
     )
