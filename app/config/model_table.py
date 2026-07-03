@@ -1,4 +1,3 @@
-# app/config/model_table.py
 from dataclasses import dataclass
 
 

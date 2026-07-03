@@ -1,4 +1,3 @@
-# app/main.py
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +19,7 @@ from app.db.database import create_all_tables, close_database
 from app.db.redis_client import check_redis_connection, close_redis
 from app.db.qdrant_client import ensure_collection_exists, close_qdrant
 from app.api.v1.routers import health
+from app.api.v1.routers import documents
 
 setup_logging()
 logger = structlog.get_logger()
@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
         logger.info("Database tables ready")
     except Exception as e:
         logger.error("Database initialization failed", error=str(e))
-        raise  # Cannot start without database
+        raise 
     logger.info("Checking Redis connection...")
     redis_ok, redis_detail = await check_redis_connection()
     if redis_ok:
@@ -109,6 +109,7 @@ def create_app() -> FastAPI:
 
     # ── Routers ───────────────────────────────────────────────
     app.include_router(health.router, prefix="/api/v1")
+    app.include_router(documents.router, prefix="/api/v1")   # ← NEW
 
     return app
 

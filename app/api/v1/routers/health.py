@@ -1,4 +1,3 @@
-# app/api/v1/routers/health.py
 from fastapi import APIRouter
 from datetime import datetime, timezone
 import structlog

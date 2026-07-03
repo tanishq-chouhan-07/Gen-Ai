@@ -180,7 +180,7 @@ EMBEDDING_PROVIDER="gemini"
 
 # ── Gemini ────────────────────────────────────────────────────
 GEMINI_API_KEY="your-gemini-api-key-here"
-GEMINI_MODEL="gemini-1.5-flash"
+GEMINI_MODEL="gemini-2.5-flash"
 GEMINI_EMBEDDING_MODEL="models/text-embedding-004"
 
 # ── Qdrant ────────────────────────────────────────────────────
@@ -287,7 +287,7 @@ class Settings(BaseSettings):
 
     # ── Gemini (Development) ──────────────────────────────────
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    gemini_model: str = "gemini-1.5-flash"
+    gemini_model: str = "gemini-2.5-flash"
     gemini_embedding_model: str = "models/text-embedding-004"
 
     # ── Amazon Bedrock (Production) ───────────────────────────

@@ -1,4 +1,3 @@
-# app/db/database.py
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     AsyncEngine,

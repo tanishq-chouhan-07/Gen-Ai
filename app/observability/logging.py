@@ -1,4 +1,3 @@
-# app/observability/logging.py
 """
 Structured Logging Setup
 

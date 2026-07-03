@@ -1,4 +1,3 @@
-# app/api/schemas/health.py
 from pydantic import BaseModel
 from typing import Literal
 from datetime import datetime
