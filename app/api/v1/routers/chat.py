@@ -5,6 +5,7 @@ Endpoints for interacting with the Document AI Agent.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from functools import lru_cache
 import structlog
 
 from app.api.schemas.chat import ChatRequest, ChatResponse
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 logger = structlog.get_logger()
 
 
+@lru_cache()
 def get_chat_service() -> ChatService:
     """Dependency injection for ChatService."""
     llm_provider = create_llm_provider()

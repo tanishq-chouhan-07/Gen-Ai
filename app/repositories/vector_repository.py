@@ -231,6 +231,20 @@ class VectorRepository:
         )
         return result.count > 0
 
+    async def delete_by_document_id(self, document_id: str) -> None:
+        """Delete all chunks associated with a document ID from Qdrant."""
+        await self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="document_id",
+                        match=MatchValue(value=document_id)
+                    )
+                ]
+            )
+        )
+
     @staticmethod
     def _chunk_id_to_int(chunk_id: str) -> int:
         """

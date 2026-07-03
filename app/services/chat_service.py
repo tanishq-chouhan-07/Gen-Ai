@@ -1,26 +1,30 @@
+# app/services/chat_service.py
 """
-Chat Service
+Chat Service (Compound AI System)
 
-Orchestrates the full RAG pipeline:
-1. Load history
-2. Retrieve context
-3. Build prompt
-4. Generate/stream LLM response
-5. Save history
+Orchestrates an agentic loop:
+1. Rewrite query for standalone context (Memory Fix)
+2. Agent loop decides to search documents or chit-chat (Agent Loop)
+3. Forces structured output via finish_answer tool (Structured Output)
+4. Saves history
 """
 from typing import AsyncGenerator
 import structlog
+import json
 
-from app.llm.base import LLMProvider, LLMRequest, LLMMessage
+from app.llm.base import LLMProvider, LLMRequest, LLMMessage, ToolDefinition
 from app.services.retrieval_service import RetrievalService
 from app.services.memory_service import MemoryService
+from app.services.query_service import QueryService
+from app.tools.document_search import DocumentSearchTool
 from app.prompts.builder import PromptBuilder
-
+from app.prompts.registry import PromptRegistry
+from datetime import datetime
 logger = structlog.get_logger()
 
 
 class ChatService:
-    """Main business logic for chat interactions."""
+    """Main business logic for agentic chat interactions."""
     
     def __init__(
         self,
@@ -33,84 +37,155 @@ class ChatService:
         self.retrieval = retrieval_service
         self.memory = memory_service
         self.prompt_builder = prompt_builder
+        
+        # Initialize new services and tools
+        self.query_service = QueryService(llm_provider, memory_service)
+        self.search_tool = DocumentSearchTool(retrieval_service)
+        
+        # Define tools available to the agent
+        self.tools = [
+            ToolDefinition(**self.search_tool.schema),
+            ToolDefinition(
+                type="function",
+                function={
+                    "name": "finish_answer",
+                    "description": "Use this to deliver the final answer to the user. You must cite sources used.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "answer": {"type": "string", "description": "The final answer text"},
+                            "citations_used": {
+                                "type": "array", 
+                                "items": {"type": "integer"},
+                                "description": "List of citation numbers [1, 2] actually used in the answer"
+                            }
+                        },
+                        "required": ["answer", "citations_used"]
+                    }
+                }
+            )
+        ]
     
     async def stream_chat(self, query: str, session_id: str) -> AsyncGenerator[str, None]:
-        """Stream a chat response token by token."""
+        """
+        Streaming chat response.
+        NOTE: True streaming with tool-calling requires parsing tool-call deltas.
+        To keep this stable for the SSE endpoint, we run the bounded agent loop,
+        then stream the final assembled answer back to the client.
+        """
         log = logger.bind(session_id=session_id, query_preview=query[:50])
-        log.info("Starting streaming chat")
+        log.info("Starting streaming agent chat")
         
-        # 1. Load history
-        history = await self.memory.get_history(session_id)
+        # Run the agent loop to get the final structured result
+        result = await self.chat(query, session_id)
+        final_answer = result.get("answer", "")
         
-        # 2. Retrieve context from Qdrant
-        context_chunks = await self.retrieval.retrieve(query)
-        
-        # 3. Build prompt
-        messages = self.prompt_builder.build_rag_prompt(
-            query=query,
-            context_chunks=context_chunks,
-            conversation_history=history
-        )
-        
-        # 4. Generate streaming response
-        request = LLMRequest(
-            messages=messages,
-            max_tokens=2048,  # Give reasoning models room to think + answer
-            temperature=0.1,
-            stream=True
-        )
-        
-        full_response = []
-        async for token in self.llm.generate_stream(request):
-            full_response.append(token)
-            yield token
+        # Yield the answer word by word to simulate streaming over SSE
+        words = final_answer.split()
+        for i, word in enumerate(words):
+            yield word + (" " if i < len(words) - 1 else "")
             
-        # 5. Save turn to memory
-        full_text = "".join(full_response)
-        await self.memory.save_turn(session_id, query, full_text)
-        
-        log.info("Streaming chat completed", response_length=len(full_text))
-    
+        log.info("Streaming agent chat completed")
+
     async def chat(self, query: str, session_id: str) -> dict:
-        """Non-streaming chat response."""
+        """Non-streaming agentic chat response."""
         log = logger.bind(session_id=session_id, query_preview=query[:50])
-        log.info("Starting chat")
-        
-        # 1. Load history
+        log.info("Starting agent chat loop")
+
         history = await self.memory.get_history(session_id)
+
+        from app.prompts.registry import PromptRegistry
+        from datetime import datetime
         
-        # 2. Retrieve context
-        context_chunks = await self.retrieval.retrieve(query)
-        
-        # 3. Build prompt
-        messages = self.prompt_builder.build_rag_prompt(
-            query=query,
-            context_chunks=context_chunks,
-            conversation_history=history
+        system_template = PromptRegistry.get("system_agent_v1")
+        system_content = system_template["template"].format(
+            company_name="Our Company",
+            current_date=datetime.now().strftime("%B %d, %Y"),
         )
+
+        messages = [
+            LLMMessage(role="system", content=system_content),
+        ]
         
-        # 4. Generate response
-        request = LLMRequest(messages=messages, max_tokens=2048, temperature=0.1)
-        response = await self.llm.generate(request)
-        
-        # 5. Save turn to memory
-        await self.memory.save_turn(session_id, query, response.content)
-        
-        # 6. Extract citations from chunks
-        citations = []
-        for i, chunk in enumerate(context_chunks, 1):
-            citations.append({
-                "citation_number": i,
-                "document_id": chunk["document_id"],
-                "filename": chunk["filename"],
-                "page_number": chunk["page_number"],
-                "content_preview": chunk["content"][:200],
-                "relevance_score": chunk["score"]
-            })
-        
+        if history:
+            messages.extend(history[-4:])  # Last 2 turns (4 messages)
+            
+        messages.append(LLMMessage(role="user", content=query))
+
+        for step in range(5):
+            request = LLMRequest(
+                messages=messages,
+                max_tokens=2048,
+                temperature=0.1,
+                tools=self.tools,
+                tool_choice="auto"
+            )
+
+            response = await self.llm.generate(request)
+            assistant_msg = LLMMessage(
+                role="assistant",
+                content=response.content,
+                tool_calls=response.tool_calls
+            )
+            messages.append(assistant_msg)
+
+            if not response.tool_calls:
+                log.warning("Agent did not call a tool, forcing fallback finish")
+                final_text = response.content or "I could not process that request."
+                await self.memory.save_turn(session_id, query, final_text)
+                return {
+                    "answer": final_text,
+                    "citations": [],
+                    "model": response.model,
+                    "provider": response.provider
+                }
+
+            for tool_call in response.tool_calls:
+                func_name = tool_call["function"]["name"]
+                args = json.loads(tool_call["function"]["arguments"])
+
+                if func_name == "search_documents":
+                    search_query = args.get("query", query)
+                    chunks = await self.search_tool.execute(search_query)
+                    messages.append(LLMMessage(
+                        role="tool",
+                        tool_call_id=tool_call["id"],
+                        content=chunks
+                    ))
+                    log.info("Agent used search tool", agent_query=search_query)
+
+                elif func_name == "finish_answer":
+                    final_answer = args.get("answer", "")
+                    citations_used = args.get("citations_used", [])
+                    
+                    citations = []
+                    for cite_num in citations_used:
+                        idx = cite_num - 1
+                        if 0 <= idx < len(self.search_tool.last_chunks):
+                            chunk = self.search_tool.last_chunks[idx]
+                            citations.append({
+                                "citation_number": cite_num,
+                                "document_id": chunk["document_id"],
+                                "filename": chunk["filename"],
+                                "page_number": chunk["page_number"],
+                                "content_preview": chunk["content"][:200],
+                                "relevance_score": chunk.get("rerank_score", chunk.get("score", 0.0))
+                            })
+                    
+                    await self.memory.save_turn(session_id, query, final_answer)
+                    log.info("Agent finished with structured output", citation_count=len(citations))
+                    
+                    return {
+                        "answer": final_answer,
+                        "citations": citations,
+                        "model": response.model,
+                        "provider": response.provider
+                    }
+
+        # If loop exhausts 5 steps without finishing
         return {
-            "answer": response.content,
-            "citations": citations,
-            "model": response.model,
-            "provider": response.provider
+            "answer": "I was unable to complete the request within the allowed steps.", 
+            "citations": [],
+            "model": "unknown",
+            "provider": "unknown"
         }

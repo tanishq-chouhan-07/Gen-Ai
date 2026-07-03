@@ -20,10 +20,20 @@ from app.db.redis_client import check_redis_connection, close_redis
 from app.db.qdrant_client import ensure_collection_exists, close_qdrant
 from app.api.v1.routers import health, documents, chat
 from app.prompts.registry import PromptRegistry
+import logging
+import os
 
 setup_logging()
 logger = structlog.get_logger()
 settings = get_settings()
+
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+os.environ["HF_HUB_VERBOSITY"] = "error"
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 
 
 @asynccontextmanager

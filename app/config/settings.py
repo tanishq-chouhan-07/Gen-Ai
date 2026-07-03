@@ -114,7 +114,7 @@ class Settings(BaseSettings):
     chunk_size: int = 512
     chunk_overlap: int = 128
     retrieval_top_k: int = 5
-    retrieval_score_threshold: float = 0.7
+    retrieval_score_threshold: float = 0.5
 
     # ───────────────────────────────────────────────────────
     # Agent

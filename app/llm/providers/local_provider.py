@@ -26,24 +26,24 @@ class OpenAIProvider(LLMProvider):
         self.logger = logger.bind(provider="groq_httpx", model=self.model_id)
     
     async def generate(self, request: LLMRequest) -> LLMResponse:
-        """Generate complete response."""
-        log = self.logger.bind(request_id=request.request_id)
-        
-        messages = [{"role": m.role, "content": m.content} for m in request.messages]
-        
         payload = {
-            "model": self.model_id,
-            "messages": messages,
+            "model": self.get_model_id(),
+            "messages": [msg.model_dump(exclude_none=True) for msg in request.messages],
             "max_tokens": request.max_tokens,
             "temperature": request.temperature,
         }
+        
+        # Add tools if provided
+        if request.tools:
+            payload["tools"] = [tool.model_dump() for tool in request.tools]
+            payload["tool_choice"] = request.tool_choice or "auto"
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
         
-        log.debug("Calling Groq API via httpx")
-        
+        # Create httpx client on the fly
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
@@ -51,26 +51,20 @@ class OpenAIProvider(LLMProvider):
                 headers=headers
             )
             response.raise_for_status()
-            data = response.json()
+            response_json = response.json()
             
-        content = data["choices"][0]["message"]["content"]
-        usage = data.get("usage", {})
-        
-        log.info(
-            "Response received",
-            input_tokens=usage.get("prompt_tokens", 0),
-            output_tokens=usage.get("completion_tokens", 0),
-        )
-        
-        return LLMResponse(
-            content=content,
-            model=self.model_id,
-            provider="openai",
-            input_tokens=usage.get("prompt_tokens", 0),
-            output_tokens=usage.get("completion_tokens", 0),
-            finish_reason=data["choices"][0].get("finish_reason", "unknown"),
-        )
-    
+            choice = response_json["choices"][0]
+            message = choice["message"]
+            
+            return LLMResponse(
+                content=message.get("content"),
+                model=self.get_model_id(),
+                provider="openai",
+                tool_calls=message.get("tool_calls"),
+                finish_reason=choice.get("finish_reason"),
+                input_tokens=response_json.get("usage", {}).get("prompt_tokens", 0),
+                output_tokens=response_json.get("usage", {}).get("completion_tokens", 0)
+            )
     async def generate_stream(self, request: LLMRequest) -> AsyncGenerator[str, None]:
         """Stream tokens from API via httpx."""
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
