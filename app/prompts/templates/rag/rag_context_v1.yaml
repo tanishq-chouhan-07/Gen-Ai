@@ -1,0 +1,19 @@
+name: rag_context
+version: "1.0"
+description: "Template for injecting retrieved context into the LLM prompt"
+author: "AI Team"
+
+template: |
+  Please answer the following question based on the provided context.
+  If the context does not contain enough information to answer the question, 
+  state that you could not find the information.
+
+  ## Context
+  {context}
+
+  ## Question
+  {query}
+
+variables:
+  - context
+  - query

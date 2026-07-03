@@ -18,8 +18,8 @@ from app.middleware.error_handler import (
 from app.db.database import create_all_tables, close_database
 from app.db.redis_client import check_redis_connection, close_redis
 from app.db.qdrant_client import ensure_collection_exists, close_qdrant
-from app.api.v1.routers import health
-from app.api.v1.routers import documents
+from app.api.v1.routers import health, documents
+from app.prompts.registry import PromptRegistry
 
 setup_logging()
 logger = structlog.get_logger()
@@ -45,7 +45,11 @@ async def lifespan(app: FastAPI):
         logger.info("Database tables ready")
     except Exception as e:
         logger.error("Database initialization failed", error=str(e))
-        raise 
+        raise
+
+    logger.info("Loading prompt templates...")
+    PromptRegistry.load_all()
+
     logger.info("Checking Redis connection...")
     redis_ok, redis_detail = await check_redis_connection()
     if redis_ok:
