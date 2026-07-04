@@ -29,9 +29,9 @@ class DocumentSearchTool:
             }
         }
 
-    async def execute(self, query: str) -> str:
-        chunks = await self.retrieval.retrieve(query)
-        self.last_chunks = chunks  # Save structured data to instance state
+    async def execute(self, query: str, user_id: str | None = None) -> str:
+        chunks = await self.retrieval.retrieve(query, user_id=user_id)
+        self.last_chunks = chunks
         
         if not chunks:
             return "No relevant documents found."

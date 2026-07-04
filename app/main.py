@@ -18,7 +18,7 @@ from app.middleware.error_handler import (
 from app.db.database import create_all_tables, close_database
 from app.db.redis_client import check_redis_connection, close_redis
 from app.db.qdrant_client import ensure_collection_exists, close_qdrant
-from app.api.v1.routers import health, documents, chat
+from app.api.v1.routers import health, documents, chat, auth
 from app.prompts.registry import PromptRegistry
 import logging
 import os
@@ -125,6 +125,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/api/v1")
     app.include_router(documents.router, prefix="/api/v1")
     app.include_router(chat.router, prefix="/api/v1")
+    app.include_router(auth.router, prefix="/api/v1")
 
     return app
 

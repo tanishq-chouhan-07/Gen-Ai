@@ -45,6 +45,7 @@ class Document(BaseModel):
     created_at: datetime
     updated_at: datetime
     indexed_at: Optional[datetime] = None
+    user_id: str | None = None 
 
 
 class IngestionJob(BaseModel):

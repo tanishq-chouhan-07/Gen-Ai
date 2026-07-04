@@ -6,7 +6,7 @@ No SQL lives outside this file.
 """
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, delete, func
 import structlog
 
 from app.db.models import DocumentModel, IngestionJobModel
@@ -38,6 +38,7 @@ class DocumentRepository:
         original_filename: str,
         file_size_bytes: int,
         file_hash: str,
+        user_id: str,  # MULTI-TENANCY: Added user_id
     ) -> Document:
         """Create a new document record."""
         async with self._get_session() as session:
@@ -50,12 +51,13 @@ class DocumentRepository:
                     file_size_bytes=file_size_bytes,
                     file_hash=file_hash,
                     status=DocumentStatus.PENDING.value,
+                    user_id=user_id,  # MULTI-TENANCY: Save user_id
                     created_at=now,
                     updated_at=now,
                 )
                 session.add(db_doc)
 
-            logger.info("Document record created", document_id=document_id)
+            logger.info("Document record created", document_id=document_id, user_id=user_id)
             return self._to_domain(db_doc)
 
     async def get_document(self, document_id: str) -> Document | None:
@@ -82,17 +84,22 @@ class DocumentRepository:
         self,
         page: int = 1,
         page_size: int = 20,
+        user_id: str | None = None,  # MULTI-TENANCY: Optional filter by user
     ) -> tuple[list[Document], int]:
         """
         List all documents with pagination.
+        If user_id is provided, filters by that user.
         Returns (documents, total_count).
         """
         async with self._get_session() as session:
+            # Base query conditions
+            conditions = [DocumentModel.status != DocumentStatus.DELETED.value]
+            if user_id:
+                conditions.append(DocumentModel.user_id == user_id)
+
             # Count total
-            from sqlalchemy import func
             count_result = await session.execute(
-                select(func.count(DocumentModel.id))
-                .where(DocumentModel.status != DocumentStatus.DELETED.value)
+                select(func.count(DocumentModel.id)).where(*conditions)
             )
             total = count_result.scalar() or 0
 
@@ -100,7 +107,7 @@ class DocumentRepository:
             offset = (page - 1) * page_size
             result = await session.execute(
                 select(DocumentModel)
-                .where(DocumentModel.status != DocumentStatus.DELETED.value)
+                .where(*conditions)
                 .order_by(DocumentModel.created_at.desc())
                 .offset(offset)
                 .limit(page_size)
@@ -254,6 +261,7 @@ class DocumentRepository:
             created_at=db_doc.created_at,
             updated_at=db_doc.updated_at,
             indexed_at=db_doc.indexed_at,
+            user_id=db_doc.user_id,  # MULTI-TENANCY: Map user_id
         )
 
     @staticmethod

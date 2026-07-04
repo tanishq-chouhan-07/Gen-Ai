@@ -3,10 +3,11 @@
 Chat Service (Compound AI System)
 
 Orchestrates an agentic loop:
-1. Rewrite query for standalone context (Memory Fix)
-2. Agent loop decides to search documents or chit-chat (Agent Loop)
-3. Forces structured output via finish_answer tool (Structured Output)
-4. Saves history
+1. Agent loop decides to search documents or chit-chat (Agent Loop)
+2. Forces structured output via finish_answer tool (Structured Output)
+3. Saves history
+4. Enforces multi-tenancy in retrieval (Users only see their docs, Admins see all)
+5. Applies Guardrails (Input injection detection, Output faithfulness check)
 """
 from typing import AsyncGenerator
 import structlog
@@ -15,11 +16,10 @@ import json
 from app.llm.base import LLMProvider, LLMRequest, LLMMessage, ToolDefinition
 from app.services.retrieval_service import RetrievalService
 from app.services.memory_service import MemoryService
-from app.services.query_service import QueryService
+from app.services.guardrail_service import GuardrailService
 from app.tools.document_search import DocumentSearchTool
 from app.prompts.builder import PromptBuilder
-from app.prompts.registry import PromptRegistry
-from datetime import datetime
+
 logger = structlog.get_logger()
 
 
@@ -38,11 +38,9 @@ class ChatService:
         self.memory = memory_service
         self.prompt_builder = prompt_builder
         
-        # Initialize new services and tools
-        self.query_service = QueryService(llm_provider, memory_service)
         self.search_tool = DocumentSearchTool(retrieval_service)
+        self.guardrails = GuardrailService(llm_provider)
         
-        # Define tools available to the agent
         self.tools = [
             ToolDefinition(**self.search_tool.schema),
             ToolDefinition(
@@ -66,7 +64,7 @@ class ChatService:
             )
         ]
     
-    async def stream_chat(self, query: str, session_id: str) -> AsyncGenerator[str, None]:
+    async def stream_chat(self, query: str, session_id: str, user_id: str, is_admin: bool) -> AsyncGenerator[str, None]:
         """
         Streaming chat response.
         NOTE: True streaming with tool-calling requires parsing tool-call deltas.
@@ -76,21 +74,29 @@ class ChatService:
         log = logger.bind(session_id=session_id, query_preview=query[:50])
         log.info("Starting streaming agent chat")
         
-        # Run the agent loop to get the final structured result
-        result = await self.chat(query, session_id)
+        result = await self.chat(query, session_id, user_id, is_admin)
         final_answer = result.get("answer", "")
         
-        # Yield the answer word by word to simulate streaming over SSE
         words = final_answer.split()
         for i, word in enumerate(words):
             yield word + (" " if i < len(words) - 1 else "")
             
         log.info("Streaming agent chat completed")
-
-    async def chat(self, query: str, session_id: str) -> dict:
+    
+    async def chat(self, query: str, session_id: str, user_id: str, is_admin: bool) -> dict:
         """Non-streaming agentic chat response."""
         log = logger.bind(session_id=session_id, query_preview=query[:50])
         log.info("Starting agent chat loop")
+
+        # 1. INPUT GUARDRAIL: Check for prompt injection
+        if self.guardrails.detect_prompt_injection(query):
+            log.warning("Request blocked by input guardrail")
+            return {
+                "answer": "I cannot process requests that attempt to override my instructions.",
+                "citations": [],
+                "model": "guardrail",
+                "provider": "system"
+            }
 
         history = await self.memory.get_history(session_id)
 
@@ -108,10 +114,11 @@ class ChatService:
         ]
         
         if history:
-            messages.extend(history[-4:])  # Last 2 turns (4 messages)
+            messages.extend(history[-4:])
             
         messages.append(LLMMessage(role="user", content=query))
 
+        # 2. AGENT LOOP (Bounded to 5 steps)
         for step in range(5):
             request = LLMRequest(
                 messages=messages,
@@ -146,18 +153,36 @@ class ChatService:
 
                 if func_name == "search_documents":
                     search_query = args.get("query", query)
-                    chunks = await self.search_tool.execute(search_query)
+                    
+                    # MULTI-TENANCY: Admins see all, Users only see their own
+                    target_user_id = None if is_admin else user_id
+                    
+                    chunks = await self.search_tool.execute(search_query, user_id=target_user_id)
                     messages.append(LLMMessage(
                         role="tool",
                         tool_call_id=tool_call["id"],
                         content=chunks
                     ))
-                    log.info("Agent used search tool", agent_query=search_query)
+                    log.info("Agent used search tool", agent_query=search_query, scoped_user=target_user_id or "ALL (Admin)")
 
                 elif func_name == "finish_answer":
                     final_answer = args.get("answer", "")
                     citations_used = args.get("citations_used", [])
                     
+                    # 3. OUTPUT GUARDRAIL (Evaluator-Optimizer)
+                    is_grounded, critique = await self.guardrails.check_faithfulness(
+                        final_answer, self.search_tool.last_chunks
+                    )
+                    
+                    if not is_grounded and step < 4:  # Don't revise on the very last step
+                        log.warning("Agent answer failed faithfulness check, requesting revision", critique=critique)
+                        messages.append(LLMMessage(
+                            role="user",
+                            content=f"Your previous answer was not grounded in the provided context. Critique: {critique}. Please revise your answer using ONLY the provided context and call finish_answer again."
+                        ))
+                        continue  # Break out of tool_call loop, continue agent loop step
+
+                    # If grounded (or on last step), accept the answer
                     citations = []
                     for cite_num in citations_used:
                         idx = cite_num - 1
@@ -182,7 +207,6 @@ class ChatService:
                         "provider": response.provider
                     }
 
-        # If loop exhausts 5 steps without finishing
         return {
             "answer": "I was unable to complete the request within the allowed steps.", 
             "citations": [],

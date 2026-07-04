@@ -137,6 +137,10 @@ class Settings(BaseSettings):
         alias="ENABLE_CONVERSATION_MEMORY",
     )
 
+    secret_key: str = Field(default="dev-secret", env="SECRET_KEY")
+    algorithm: str = Field(default="HS256", env="ALGORITHM")
+    access_token_expire_minutes: int = Field(default=60, env="ACCESS_TOKEN_EXPIRE_MINUTES")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

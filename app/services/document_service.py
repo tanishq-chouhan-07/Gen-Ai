@@ -52,6 +52,7 @@ class DocumentService:
         self,
         file: UploadFile,
         background_tasks: BackgroundTasks,
+        user_id: str  # MULTI-TENANCY: Added user_id parameter
     ) -> tuple[Document, IngestionJob]:
         """
         Handle a new document upload.
@@ -67,15 +68,12 @@ class DocumentService:
         Returns:
             (document, job) tuple for the API response
         """
-        log = logger.bind(filename=file.filename)
+        log = logger.bind(filename=file.filename, user_id=user_id)
         log.info("Upload initiated")
 
-        # ── Save to temp file ─────────────────────────────────
-        # We need it on disk for PyMuPDF
         tmp_path = await self._save_to_temp(file)
 
         try:
-            # ── Validate ──────────────────────────────────────
             log.info("Validating document")
             validation = self.validator.validate(
                 file_path=tmp_path,
@@ -83,11 +81,9 @@ class DocumentService:
             )
 
             if not validation.is_valid:
-                # Clean up temp file
                 tmp_path.unlink(missing_ok=True)
                 raise ValueError(validation.error_message)
 
-            # ── Duplicate check ───────────────────────────────
             existing = await self.document_repo.get_document_by_hash(
                 validation.file_hash
             )
@@ -102,7 +98,6 @@ class DocumentService:
                     f"Document ID: {existing.id}"
                 )
 
-            # ── Create DB records ─────────────────────────────
             document_id = str(uuid.uuid4())
             job_id = str(uuid.uuid4())
 
@@ -112,6 +107,7 @@ class DocumentService:
                 original_filename=file.filename or "upload.pdf",
                 file_size_bytes=validation.file_size_bytes,
                 file_hash=validation.file_hash,
+                user_id=user_id  # MULTI-TENANCY: Save the user_id
             )
 
             job = await self.document_repo.create_job(
@@ -125,21 +121,19 @@ class DocumentService:
                 job_id=job_id,
             )
 
-            # ── Schedule background processing ────────────────
-            # This returns immediately - pipeline runs in background
             background_tasks.add_task(
                 self.pipeline.run,
                 document_id=document_id,
                 job_id=job_id,
                 file_path=tmp_path,
                 original_filename=file.filename or "upload.pdf",
+                user_id=user_id  # MULTI-TENANCY: Pass to pipeline
             )
 
             log.info("Background ingestion scheduled")
             return document, job
 
         except Exception:
-            # Clean up temp file on any error
             tmp_path.unlink(missing_ok=True)
             raise
 
@@ -178,18 +172,15 @@ class DocumentService:
         """
         log = logger.bind(document_id=document_id)
 
-        # Verify it exists
         doc = await self.document_repo.get_document(document_id)
         if not doc:
             raise ValueError(f"Document not found: {document_id}")
 
-        # Delete vectors from Qdrant
         deleted_vectors = await self.vector_repo.delete_document_chunks(
             document_id
         )
         log.info("Vectors deleted", count=deleted_vectors)
 
-        # Soft delete in PostgreSQL
         await self.document_repo.delete_document(document_id)
         log.info("Document deleted")
 
@@ -204,9 +195,8 @@ class DocumentService:
         tmp_path = Path(tmp_path_str)
 
         try:
-            os.close(tmp_fd)  # Close the file descriptor
+            os.close(tmp_fd)
 
-            # Read and write in chunks to handle large files
             async with aiofiles.open(tmp_path, "wb") as tmp_file:
                 while True:
                     chunk = await file.read(1024 * 1024)  # 1MB chunks

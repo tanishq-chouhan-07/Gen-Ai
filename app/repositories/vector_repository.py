@@ -44,6 +44,7 @@ class VectorRepository:
         chunks: list[DocumentChunk],
         embeddings: list[list[float]],
         document_filename: str,
+        user_id: str,  # MULTI-TENANCY: Added user_id
     ) -> int:
         """
         Store chunk vectors in Qdrant.
@@ -52,6 +53,7 @@ class VectorRepository:
             chunks: List of DocumentChunk objects
             embeddings: Corresponding embedding vectors (same order as chunks)
             document_filename: Original filename for search results
+            user_id: The UUID of the user uploading the document
 
         Returns:
             Number of chunks stored
@@ -68,16 +70,17 @@ class VectorRepository:
         log = logger.bind(
             document_id=chunks[0].document_id,
             chunk_count=len(chunks),
+            user_id=user_id,
         )
 
         # Build Qdrant point objects
         points = []
         for chunk, vector in zip(chunks, embeddings):
             # The payload is stored alongside the vector in Qdrant
-            # We can filter and return these fields in search results
             payload = {
                 "chunk_id": chunk.chunk_id,
                 "document_id": chunk.document_id,
+                "user_id": user_id,  # MULTI-TENANCY: Save user_id in payload
                 "content": chunk.content,
                 "page_number": chunk.page_number,
                 "chunk_index": chunk.chunk_index,
@@ -88,8 +91,6 @@ class VectorRepository:
             }
 
             points.append(PointStruct(
-                # Qdrant needs a numeric or UUID point ID
-                # We hash the chunk_id to get a stable integer
                 id=self._chunk_id_to_int(chunk.chunk_id),
                 vector=vector,
                 payload=payload,
@@ -117,6 +118,7 @@ class VectorRepository:
         query_vector: list[float],
         top_k: int = 5,
         document_ids: list[str] | None = None,
+        user_id: str | None = None,  # MULTI-TENANCY: Added user_id filter
         score_threshold: float = 0.0,
     ) -> list[RetrievedChunk]:
         """
@@ -126,23 +128,32 @@ class VectorRepository:
             query_vector: The embedded query
             top_k: Maximum number of results to return
             document_ids: Optional filter to specific documents
+            user_id: Optional filter to restrict search to a specific user's documents
             score_threshold: Minimum similarity score (0-1)
 
         Returns:
             List of RetrievedChunk sorted by similarity (highest first)
         """
-        # Build optional filter for specific documents
-        search_filter = None
+        must_conditions = []
+        
         if document_ids:
-            search_filter = Filter(
-                must=[
-                    FieldCondition(
-                        key="document_id",
-                        match=MatchValue(value=doc_id),
-                    )
-                    for doc_id in document_ids
-                ]
+            must_conditions.extend([
+                FieldCondition(
+                    key="document_id",
+                    match=MatchValue(value=doc_id),
+                )
+                for doc_id in document_ids
+            ])
+            
+        if user_id:  # MULTI-TENANCY: Apply user filter
+            must_conditions.append(
+                FieldCondition(
+                    key="user_id",
+                    match=MatchValue(value=user_id)
+                )
             )
+
+        search_filter = Filter(must=must_conditions) if must_conditions else None
 
         results = await self.client.search(
             collection_name=self.collection,
@@ -150,7 +161,7 @@ class VectorRepository:
             limit=top_k,
             query_filter=search_filter,
             score_threshold=score_threshold,
-            with_payload=True,  # Include metadata in results
+            with_payload=True,
         )
 
         # Convert Qdrant results to our domain model
@@ -180,7 +191,6 @@ class VectorRepository:
         """
         log = logger.bind(document_id=document_id)
 
-        # First count how many points exist for this document
         count_result = await self.client.count(
             collection_name=self.collection,
             count_filter=Filter(
@@ -199,7 +209,6 @@ class VectorRepository:
             log.info("No vectors found for document")
             return 0
 
-        # Delete by filter
         await self.client.delete(
             collection_name=self.collection,
             points_selector=Filter(
@@ -234,7 +243,7 @@ class VectorRepository:
     async def delete_by_document_id(self, document_id: str) -> None:
         """Delete all chunks associated with a document ID from Qdrant."""
         await self.client.delete(
-            collection_name=self.collection_name,
+            collection_name=self.collection,
             points_selector=Filter(
                 must=[
                     FieldCondition(

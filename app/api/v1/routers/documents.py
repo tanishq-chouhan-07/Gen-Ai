@@ -1,5 +1,6 @@
 import math
-from fastapi import APIRouter, UploadFile, File, BackgroundTasks, HTTPException
+from functools import lru_cache
+from fastapi import APIRouter, UploadFile, File, BackgroundTasks, HTTPException, Depends
 import structlog
 
 from app.api.schemas.documents import (
@@ -8,6 +9,8 @@ from app.api.schemas.documents import (
     DocumentResponse,
     DocumentListResponse,
 )
+from app.db.models import UserModel  # Changed to use the DB model directly
+from app.api.dependencies import get_current_user, require_admin
 from app.utils.context import get_request_id
 from app.services.document_service import DocumentService
 from app.repositories.document_repository import DocumentRepository
@@ -23,11 +26,11 @@ router = APIRouter(prefix="/documents", tags=["Documents"])
 logger = structlog.get_logger()
 
 
+@lru_cache() # Speed fix: Load models/clients only once
 def get_document_service() -> DocumentService:
     """
     Build the DocumentService with all its dependencies.
-    In a larger app this would use FastAPI Depends properly.
-    For now, we construct it here.
+    Cached as Singleton so we don't rebuild on every request.
     """
     embedding_provider = create_embedding_provider()
     qdrant_client = get_qdrant_client()
@@ -65,14 +68,17 @@ def get_document_service() -> DocumentService:
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="PDF file to upload"),
+    current_user: UserModel = Depends(require_admin)  # AUTHZ: Admins only
 ):
     """Upload and start ingestion of a PDF document."""
     service = get_document_service()
+    logger.info("User uploading document", user_id=current_user.id, username=current_user.username, filename=file.filename)
 
     try:
         document, job = await service.initiate_upload(
             file=file,
             background_tasks=background_tasks,
+            user_id=current_user.id  # MULTI-TENANCY: Pass user UUID
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -97,7 +103,10 @@ async def upload_document(
     summary="Get Ingestion Status",
     description="Poll this endpoint to track document indexing progress.",
 )
-async def get_document_status(document_id: str):
+async def get_document_status(
+    document_id: str,
+    current_user: UserModel = Depends(get_current_user) 
+):
     """Get the current status of a document's ingestion job."""
     service = get_document_service()
 
@@ -126,6 +135,7 @@ async def get_document_status(document_id: str):
     description="List all indexed documents with pagination.",
 )
 async def list_documents(
+    current_user: UserModel = Depends(get_current_user),
     page: int = 1,
     page_size: int = 20,
 ):
@@ -168,7 +178,10 @@ async def list_documents(
     summary="Get Document",
     description="Get details of a specific document.",
 )
-async def get_document(document_id: str):
+async def get_document(
+    document_id: str,
+    current_user: UserModel = Depends(get_current_user)
+):
     """Get a single document by ID."""
     service = get_document_service()
 
@@ -200,9 +213,13 @@ async def get_document(document_id: str):
     summary="Delete Document",
     description="Delete a document and all its vectors from the search index.",
 )
-async def delete_document(document_id: str):
+async def delete_document(
+    document_id: str,
+    current_user: UserModel = Depends(require_admin)
+):
     """Delete a document and remove all its vectors from Qdrant."""
     service = get_document_service()
+    logger.info("User deleting document", user_id=current_user.id, username=current_user.username, document_id=document_id)
 
     try:
         await service.delete_document(document_id)

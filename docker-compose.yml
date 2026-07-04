@@ -1,95 +1,64 @@
+version: '3.8'
+
 services:
-
-  # ── Our FastAPI Application ───────────────────────────────
-  app:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.dev
-    ports:
-      - "8000:8000"
-    volumes:
-      # Hot reload - code changes reflect immediately
-      - .:/app
-    env_file:
-      - .env
-    environment:
-      - QDRANT_HOST=qdrant
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql+asyncpg://docai_user:docai_password@postgres:5432/docai_db
-    depends_on:
-      qdrant:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    networks:
-      - docai_network
-
-  # ── Qdrant Vector Database ────────────────────────────────
-  qdrant:
-    image: qdrant/qdrant:v1.9.0
-    ports:
-      - "6333:6333"   # REST API
-      - "6334:6334"   # gRPC
-    volumes:
-      - qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    networks:
-      - docai_network
-
-  # ── Redis (Sessions + Cache + Job Tracking) ───────────────
-  redis:
-    image: redis:7.2-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    networks:
-      - docai_network
-
-  # ── PostgreSQL (Document Metadata + Job Tracking) ─────────
   postgres:
-    image: postgres:16-alpine
-    ports:
-      - "5432:5432"
+    image: postgres:15-alpine
+    container_name: gen-ai-postgres
     environment:
       POSTGRES_USER: docai_user
       POSTGRES_PASSWORD: docai_password
       POSTGRES_DB: docai_db
-      POSTGRES_HOST_AUTH_METHOD: md5
-      POSTGRES_INITDB_ARGS: "--auth-host=md5 --auth-local=md5"
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U docai_user -d docai_db"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
       retries: 5
-      start_period: 10s
     networks:
-      - docai_network
+      - gen-ai-network
+    restart: always
 
+  redis:
+    image: redis:7-alpine
+    container_name: gen-ai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gen-ai-network
+    restart: always
 
-# ── Named Volumes (data persists between restarts) ───────────
-volumes:
-  qdrant_data:
-  redis_data:
-  postgres_data:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: gen-ai-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/6333'"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gen-ai-network
+    restart: always
 
-# ── Network ───────────────────────────────────────────────────
 networks:
-  docai_network:
+  gen-ai-network:
     driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:

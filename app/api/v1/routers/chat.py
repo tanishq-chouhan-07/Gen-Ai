@@ -9,6 +9,8 @@ from functools import lru_cache
 import structlog
 
 from app.api.schemas.chat import ChatRequest, ChatResponse
+from app.db.models import UserModel
+from app.api.dependencies import get_current_user
 from app.services.chat_service import ChatService
 from app.services.retrieval_service import RetrievalService
 from app.services.memory_service import MemoryService
@@ -24,7 +26,8 @@ logger = structlog.get_logger()
 
 @lru_cache()
 def get_chat_service() -> ChatService:
-    """Dependency injection for ChatService."""
+    """Dependency injection for ChatService (Cached as Singleton)."""
+    logger.info("Initializing ChatService and loading ML models (this only happens once)...")
     llm_provider = create_llm_provider()
     embedding_provider = create_embedding_provider()
     
@@ -47,6 +50,7 @@ def get_chat_service() -> ChatService:
 @router.post("/stream")
 async def stream_chat(
     request: ChatRequest,
+    current_user: UserModel = Depends(get_current_user),
     service: ChatService = Depends(get_chat_service),
 ):
     """
@@ -54,14 +58,20 @@ async def stream_chat(
     
     The response is a stream of tokens as they are generated.
     """
+    logger.info("User streaming chat", user=current_user.username, session_id=request.session_id)
+    
     async def event_generator():
         try:
-            async for token in service.stream_chat(request.query, request.session_id):
-                # SSE format: data: <json>\n\n
+            async for token in service.stream_chat(
+                request.query, 
+                request.session_id, 
+                user_id=current_user.id, 
+                is_admin=(current_user.role == "admin")
+            ):
                 yield f"data: {token}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
-            logger.error("Stream error", error=str(e))
+            logger.error("Stream error", error=str(e), user=current_user.username)
             yield f"data: Error: {str(e)}\n\n"
             yield "data: [DONE]\n\n"
 
@@ -71,7 +81,7 @@ async def stream_chat(
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no", # Disable Nginx buffering
+            "X-Accel-Buffering": "no",
         }
     )
 
@@ -79,13 +89,21 @@ async def stream_chat(
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
+    current_user: UserModel = Depends(get_current_user),
     service: ChatService = Depends(get_chat_service),
 ):
     """
     Standard chat endpoint. Returns the full response after generation.
     """
+    logger.info("User chatting", user=current_user.username, session_id=request.session_id)
+    
     try:
-        result = await service.chat(request.query, request.session_id)
+        result = await service.chat(
+            request.query, 
+            request.session_id, 
+            user_id=current_user.id, 
+            is_admin=(current_user.role == "admin")
+        )
         return ChatResponse(
             request_id="",
             session_id=request.session_id,
@@ -95,5 +113,5 @@ async def chat(
             provider=result["provider"]
         )
     except Exception as e:
-        logger.error("Chat error", error=str(e))
+        logger.error("Chat error", error=str(e), user=current_user.username)
         raise HTTPException(status_code=500, detail=str(e))

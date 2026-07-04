@@ -1,3 +1,4 @@
+# app/services/retrieval_service.py
 """
 Retrieval Service
 
@@ -25,9 +26,9 @@ class RetrievalService:
         self.embedding_provider = embedding_provider
         self.vector_repo = vector_repo
         self.settings = get_settings()
-        self.reranker = RerankerService()  # Initialize the Cross-Encoder reranker
+        self.reranker = RerankerService()
     
-    async def retrieve(self, query: str, top_k: int = 5) -> list[dict]:
+    async def retrieve(self, query: str, top_k: int = 5, user_id: str | None = None) -> list[dict]:
         """Embed the query, search Qdrant, and rerank relevant chunks."""
         log = logger.bind(query_preview=query[:50])
         
@@ -35,13 +36,12 @@ class RetrievalService:
         query_vector = await self.embedding_provider.embed(query)
         
         # 2. Search Qdrant (Stage 1: Broad Recall)
-        # We over-fetch (e.g., 4x the requested amount) and use a lower threshold.
-        # The Cross-Encoder will handle filtering out the garbage later.
         fetch_k = top_k * 4 
         chunks = await self.vector_repo.search(
             query_vector=query_vector,
             top_k=fetch_k,
-            score_threshold=0.3,  # Lowered from 0.5 to cast a wider net
+            score_threshold=0.3,
+            user_id=user_id,  # MULTI-TENANCY: Pass user_id to search
         )
         
         log.info("Initial retrieval from Qdrant", count=len(chunks))
@@ -55,11 +55,10 @@ class RetrievalService:
                 "filename": chunk.filename,
                 "page_number": chunk.page_number,
                 "content": chunk.content,
-                "score": chunk.score,  # Original Qdrant cosine similarity score
+                "score": chunk.score,
             })
             
         # 4. Rerank using Cross-Encoder (Stage 2: High Precision)
-        # This scores the (query, chunk) pairs together and returns only the top_k
         reranked_results = self.reranker.rerank(query, results, top_k=top_k)
         
         log.info("Reranking complete", final_count=len(reranked_results))

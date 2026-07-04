@@ -28,6 +28,7 @@ from app.config.settings import get_settings
 logger = structlog.get_logger()
 
 settings = get_settings()
+
 class IngestionPipeline:
     """
     Orchestrates the complete document ingestion pipeline.
@@ -36,7 +37,6 @@ class IngestionPipeline:
     by a dedicated component (parser, chunker, embedder, repository).
     """
 
-    # Batch size for embedding generation
     EMBEDDING_BATCH_SIZE = settings.EMBEDDING_BATCH_SIZE
 
     def __init__(
@@ -59,6 +59,7 @@ class IngestionPipeline:
         job_id: str,
         file_path: Path,
         original_filename: str,
+        user_id: str,  # MULTI-TENANCY: Added user_id
     ) -> None:
         """
         Execute the full ingestion pipeline for one document.
@@ -70,12 +71,14 @@ class IngestionPipeline:
             document_id: UUID of the document record
             job_id: UUID of the ingestion job
             file_path: Path to the uploaded PDF on disk
-            original_filename: Original name of the uploaded file
+            original_filename: Original name of the uploaded PDF
+            user_id: UUID of the user who uploaded the document
         """
         log = logger.bind(
             document_id=document_id,
             job_id=job_id,
             filename=original_filename,
+            user_id=user_id,
         )
         log.info("Ingestion pipeline started")
 
@@ -158,6 +161,7 @@ class IngestionPipeline:
                 chunks=chunks,
                 embeddings=all_embeddings,
                 document_filename=original_filename,
+                user_id=user_id,  # MULTI-TENANCY: Pass user_id to repository
             )
 
             log.info("Vectors stored", count=stored_count)
@@ -194,7 +198,6 @@ class IngestionPipeline:
                 error=str(e),
                 exc_info=True,
             )
-            # Mark document and job as failed
             await self.document_repo.update_document_status(
                 document_id=document_id,
                 status=DocumentStatus.FAILED,
@@ -206,8 +209,6 @@ class IngestionPipeline:
                 current_step="Pipeline failed",
                 error_message=str(e),
             )
-            # Don't re-raise - this runs in background,
-            # no one is waiting for the return value
 
     async def _embed_in_batches(
         self,
@@ -237,7 +238,6 @@ class IngestionPipeline:
             batch_embeddings = await self.embedding_provider.embed_batch(texts)
             all_embeddings.extend(batch_embeddings)
 
-            # Update progress: 40% → 80% during embedding phase
             embedding_progress = int(
                 40 + ((batch_end / total) * 40)
             )
@@ -250,7 +250,6 @@ class IngestionPipeline:
                 ),
             )
 
-            # Small delay to avoid rate limits
             if batch_end < total:
                 await asyncio.sleep(0.5)
 

@@ -2,7 +2,6 @@
 SQLAlchemy database models.
 
 These define the actual database tables.
-We keep them simple for now - just what Phase 4 (ingestion) needs.
 """
 import uuid
 from datetime import datetime, timezone
@@ -14,8 +13,9 @@ from sqlalchemy import (
     DateTime,
     Text,
     Enum as SQLEnum,
+    ForeignKey,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
 
 from app.db.database import Base
@@ -46,21 +46,62 @@ class JobStatus(str, enum.Enum):
     FAILED = "failed"
 
 
-# ── Document Table ────────────────────────────────────────────
-class DocumentModel(Base):
+# ── User Table ────────────────────────────────────────────────
+class UserModel(Base):
     """
-    Stores metadata for every uploaded document.
-    The actual PDF file goes to S3/MinIO (Phase 4).
-    The vector embeddings go to Qdrant (Phase 4).
-    This table is the source of truth for document metadata.
+    Stores user credentials and roles for Authentication/Authorization.
     """
-    __tablename__ = "documents"
+    __tablename__ = "users"
 
-    # Primary key - we use UUID strings for portability
     id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
+    )
+    username: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), default="user", nullable=False) # 'user' or 'admin'
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
+    # Relationship: A user can own many documents
+    documents: Mapped[list["DocumentModel"]] = relationship(back_populates="owner")
+
+    def __repr__(self) -> str:
+        return f"<User id={self.id} username={self.username} role={self.role}>"
+
+
+# ── Document Table ────────────────────────────────────────────
+class DocumentModel(Base):
+    """
+    Stores metadata for every uploaded document.
+    """
+    __tablename__ = "documents"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+
+    # Multi-tenancy: Who owns this document?
+    user_id: Mapped[str | None] = mapped_column(
+        String(36), 
+        ForeignKey("users.id"), 
+        nullable=True, # Nullable for now so existing docs don't break
+        index=True
     )
 
     # File information
@@ -103,6 +144,9 @@ class DocumentModel(Base):
         nullable=True,
     )
 
+    # Relationship: Link back to the User
+    owner: Mapped["UserModel"] = relationship(back_populates="documents")
+
     def __repr__(self) -> str:
         return f"<Document id={self.id} filename={self.filename} status={self.status}>"
 
@@ -111,8 +155,6 @@ class DocumentModel(Base):
 class IngestionJobModel(Base):
     """
     Tracks background ingestion jobs.
-    Every document upload creates one job.
-    The frontend polls the job status to show progress.
     """
     __tablename__ = "ingestion_jobs"
 
@@ -137,16 +179,12 @@ class IngestionJobModel(Base):
         Integer,
         default=0,
         nullable=False,
-    )  # 0-100
+    ) 
 
-    # Current operation description
     current_step: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    # Error tracking
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,
