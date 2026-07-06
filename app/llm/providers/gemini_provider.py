@@ -2,17 +2,35 @@
 Gemini LLM Provider Implementation
 
 Uses Google's gemini-2.5-flash model.
-Used in development. Replaced by BedrockProvider in production.
+Supports Tool Calling by translating generic schemas to Gemini's protobuf format.
 """
 import asyncio
+import json
+import uuid
 import google.generativeai as genai
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Any
 import structlog
 
-from app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMMessage
+from app.llm.base import LLMProvider, LLMRequest, LLMResponse, LLMMessage, ToolDefinition
 from app.config.settings import get_settings
 
 logger = structlog.get_logger()
+
+
+def _protobuf_to_dict(obj: Any) -> Any:
+    """
+    Recursively convert Google's MapComposite/RepeatedComposite objects 
+    into standard Python dicts/lists so they can be JSON serialized.
+    """
+    if hasattr(obj, "items") and callable(obj.items):
+        # It's a MapComposite (dict-like)
+        return {k: _protobuf_to_dict(v) for k, v in obj.items()}
+    elif hasattr(obj, "__iter__") and not isinstance(obj, str):
+        # It's a RepeatedComposite (list-like)
+        return [_protobuf_to_dict(v) for v in obj]
+    else:
+        # It's a primitive (string, int, float, bool)
+        return obj
 
 
 class GeminiProvider(LLMProvider):
@@ -25,15 +43,68 @@ class GeminiProvider(LLMProvider):
         self._model = genai.GenerativeModel(self.model_id)
         self.logger = logger.bind(provider="gemini", model=self.model_id)
     
+    def _convert_tools(self, tools: list[ToolDefinition]) -> list:
+        """Convert generic OpenAI-style tools to Gemini's protobuf format."""
+        if not tools:
+            return []
+            
+        function_declarations = []
+        for tool in tools:
+            func = tool.function
+            params = func.get("parameters", {})
+            
+            def convert_type(t):
+                mapping = {
+                    "string": "STRING",
+                    "number": "NUMBER",
+                    "integer": "INTEGER",
+                    "boolean": "BOOLEAN",
+                    "array": "ARRAY",
+                    "object": "OBJECT"
+                }
+                return mapping.get(t.lower(), "STRING") if t else "STRING"
+                
+            schema = {
+                "type": convert_type(params.get("type", "object")),
+                "properties": {},
+                "required": params.get("required", [])
+            }
+            
+            for prop_name, prop_val in params.get("properties", {}).items():
+                prop_schema = {
+                    "type": convert_type(prop_val.get("type", "string")),
+                    "description": prop_val.get("description", "")
+                }
+                
+                if prop_schema["type"] == "ARRAY" and "items" in prop_val:
+                    prop_schema["items"] = {
+                        "type": convert_type(prop_val["items"].get("type", "string"))
+                    }
+                    
+                schema["properties"][prop_name] = prop_schema
+                
+            function_declarations.append({
+                "name": func["name"],
+                "description": func["description"],
+                "parameters": schema
+            })
+            
+        return [{"function_declarations": function_declarations}]
+
     async def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate complete response from Gemini."""
         log = self.logger.bind(request_id=request.request_id)
         
         system_prompt, contents = self._format_messages(request.messages)
+        gemini_tools = self._convert_tools(request.tools) if request.tools else None
         
         model = self._model
-        if system_prompt:
-            model = genai.GenerativeModel(self.model_id, system_instruction=system_prompt)
+        if system_prompt or gemini_tools:
+            model = genai.GenerativeModel(
+                self.model_id, 
+                system_instruction=system_prompt,
+                tools=gemini_tools
+            )
         
         generation_config = genai.GenerationConfig(
             max_output_tokens=request.max_tokens,
@@ -47,31 +118,69 @@ class GeminiProvider(LLMProvider):
             generation_config=generation_config,
         )
         
-        content = response.text or ""
+        content = ""
+        finish_reason = "unknown"
+        tool_calls = None
+        
+        if response.candidates:
+            candidate = response.candidates[0]
+            finish_reason = str(candidate.finish_reason)
+            
+            if candidate.content and candidate.content.parts:
+                for part in candidate.content.parts:
+                    if hasattr(part, 'text') and part.text:
+                        content += part.text
+                    elif hasattr(part, 'function_call') and part.function_call.name:
+                        if not tool_calls:
+                            tool_calls = []
+                        
+                        func_name = part.function_call.name
+                        
+                        # Use our custom converter to handle MapComposite safely
+                        args_dict = _protobuf_to_dict(part.function_call.args)
+                        args_json = json.dumps(args_dict)
+                        
+                        tool_calls.append({
+                            "id": f"call_{uuid.uuid4().hex[:8]}",
+                            "type": "function",
+                            "function": {
+                                "name": func_name,
+                                "arguments": args_json
+                            }
+                        })
+        
         usage = response.usage_metadata
         
         log.info(
             "Gemini response received",
             input_tokens=usage.prompt_token_count if usage else 0,
             output_tokens=usage.candidates_token_count if usage else 0,
+            finish_reason=finish_reason,
+            has_tool_calls=bool(tool_calls)
         )
         
         return LLMResponse(
-            content=content,
+            content=content if content else None,
             model=self.model_id,
             provider="gemini",
             input_tokens=usage.prompt_token_count if usage else 0,
             output_tokens=usage.candidates_token_count if usage else 0,
-            finish_reason=str(response.candidates[0].finish_reason) if response.candidates else "unknown",
+            finish_reason=finish_reason,
+            tool_calls=tool_calls
         )
     
     async def generate_stream(self, request: LLMRequest) -> AsyncGenerator[str, None]:
         """Stream tokens from Gemini."""
         system_prompt, contents = self._format_messages(request.messages)
+        gemini_tools = self._convert_tools(request.tools) if request.tools else None
         
         model = self._model
-        if system_prompt:
-            model = genai.GenerativeModel(self.model_id, system_instruction=system_prompt)
+        if system_prompt or gemini_tools:
+            model = genai.GenerativeModel(
+                self.model_id, 
+                system_instruction=system_prompt,
+                tools=gemini_tools
+            )
         
         generation_config = genai.GenerationConfig(
             max_output_tokens=request.max_tokens,
@@ -89,20 +198,53 @@ class GeminiProvider(LLMProvider):
             if chunk.text:
                 yield chunk.text
     
-    def _format_messages(self, messages: list[LLMMessage]) -> tuple[str | None, list[dict]]:
+    def _format_messages(self, messages: list[LLMMessage]) -> tuple[str | None, list]:
         """
         Convert standard messages to Gemini format.
-        Gemini handles system prompts separately from user/model turns.
+        Translates OpenAI-style multi-message tool flows into Gemini's format.
         """
         system_prompt = None
         contents = []
+        func_name_map = {}
         
         for msg in messages:
             if msg.role == "system":
                 system_prompt = msg.content
+                
+            elif msg.role == "assistant" and msg.tool_calls:
+                parts = []
+                if msg.content:
+                    parts.append({"text": msg.content})
+                    
+                for tc in msg.tool_calls:
+                    func_name = tc["function"]["name"]
+                    tool_call_id = tc["id"]
+                    func_name_map[tool_call_id] = func_name
+                    
+                    args_dict = json.loads(tc["function"]["arguments"])
+                    parts.append({
+                        "function_call": {
+                            "name": func_name,
+                            "args": args_dict
+                        }
+                    })
+                contents.append({"role": "model", "parts": parts})
+                
+            elif msg.role == "tool":
+                func_name = func_name_map.get(msg.tool_call_id, "unknown_function")
+                contents.append({
+                    "role": "function",
+                    "parts": [{
+                        "function_response": {
+                            "name": func_name,
+                            "response": {"result": msg.content}
+                        }
+                    }]
+                })
+                
             else:
                 role = "user" if msg.role == "user" else "model"
-                contents.append({"role": role, "parts": [msg.content]})
+                contents.append({"role": role, "parts": [{"text": msg.content}]})
         
         return system_prompt, contents
     
@@ -116,6 +258,6 @@ class GeminiProvider(LLMProvider):
                 max_tokens=10,
             )
             response = await self.generate(test_request)
-            return len(response.content) > 0
+            return len(response.content or "") > 0
         except Exception:
             return False

@@ -2,12 +2,11 @@
 """
 Chat Service (Compound AI System)
 
-Orchestrates an agentic loop:
-1. Agent loop decides to search documents or chit-chat (Agent Loop)
-2. Forces structured output via finish_answer tool (Structured Output)
-3. Saves history
-4. Enforces multi-tenancy in retrieval (Users only see their docs, Admins see all)
-5. Applies Guardrails (Input injection detection, Output faithfulness check)
+Orchestrates an agentic loop with 4-Tier Caching:
+1. Prompt-Prefix: System prompt kept at start for Groq API native caching.
+2. Embedding Cache: Handled in EmbeddingProvider.
+3. Response Cache: Handled in LLMProvider.
+4. Semantic Cache: Handled in ChatService before Agent loop starts.
 """
 from typing import AsyncGenerator
 import structlog
@@ -17,6 +16,7 @@ from app.llm.base import LLMProvider, LLMRequest, LLMMessage, ToolDefinition
 from app.services.retrieval_service import RetrievalService
 from app.services.memory_service import MemoryService
 from app.services.guardrail_service import GuardrailService
+from app.services.cache_service import CacheService
 from app.tools.document_search import DocumentSearchTool
 from app.prompts.builder import PromptBuilder
 
@@ -40,6 +40,7 @@ class ChatService:
         
         self.search_tool = DocumentSearchTool(retrieval_service)
         self.guardrails = GuardrailService(llm_provider)
+        self.cache = CacheService(retrieval_service.embedding_provider)
         
         self.tools = [
             ToolDefinition(**self.search_tool.schema),
@@ -88,7 +89,16 @@ class ChatService:
         log = logger.bind(session_id=session_id, query_preview=query[:50])
         log.info("Starting agent chat loop")
 
-        # 1. INPUT GUARDRAIL: Check for prompt injection
+        # MULTI-TENANCY: Admins search all caches (user_id=None), Users search their own
+        cache_user_scope = None if is_admin else user_id
+
+        # TIER 4 CACHE: Semantic Cache check
+        cached_result = await self.cache.check_cache(query, user_id=cache_user_scope)
+        if cached_result:
+            log.info("Returning cached result bypassing Agent loop")
+            return cached_result
+
+        # INPUT GUARDRAIL: Check for prompt injection
         if self.guardrails.detect_prompt_injection(query):
             log.warning("Request blocked by input guardrail")
             return {
@@ -109,6 +119,9 @@ class ChatService:
             current_date=datetime.now().strftime("%B %d, %Y"),
         )
 
+        # TIER 1 CACHE: Prompt-Prefix Structure
+        # System prompt is FIRST, followed by history, then the new query.
+        # This allows the LLM API (Groq) to cache the system prompt prefix natively.
         messages = [
             LLMMessage(role="system", content=system_content),
         ]
@@ -118,16 +131,18 @@ class ChatService:
             
         messages.append(LLMMessage(role="user", content=query))
 
-        # 2. AGENT LOOP (Bounded to 5 steps)
+        # AGENT LOOP (Bounded to 5 steps)
         for step in range(5):
             request = LLMRequest(
                 messages=messages,
-                max_tokens=2048,
+                # max_tokens=2048,
+                max_tokens=8192,
                 temperature=0.1,
                 tools=self.tools,
                 tool_choice="auto"
             )
 
+            # TIER 3 CACHE happens inside self.llm.generate()
             response = await self.llm.generate(request)
             assistant_msg = LLMMessage(
                 role="assistant",
@@ -157,6 +172,7 @@ class ChatService:
                     # MULTI-TENANCY: Admins see all, Users only see their own
                     target_user_id = None if is_admin else user_id
                     
+                    # TIER 2 CACHE happens inside self.search_tool.execute() -> retrieve() -> embed()
                     chunks = await self.search_tool.execute(search_query, user_id=target_user_id)
                     messages.append(LLMMessage(
                         role="tool",
@@ -169,23 +185,22 @@ class ChatService:
                     final_answer = args.get("answer", "")
                     citations_used = args.get("citations_used", [])
                     
-                    # 3. OUTPUT GUARDRAIL (Evaluator-Optimizer)
+                    # OUTPUT GUARDRAIL (Evaluator-Optimizer)
                     is_grounded, critique = await self.guardrails.check_faithfulness(
                         final_answer, self.search_tool.last_chunks
                     )
                     
-                    if not is_grounded and step < 4:  # Don't revise on the very last step
+                    if not is_grounded and step < 4:
                         log.warning("Agent answer failed faithfulness check, requesting revision", critique=critique)
                         messages.append(LLMMessage(
                             role="user",
                             content=f"Your previous answer was not grounded in the provided context. Critique: {critique}. Please revise your answer using ONLY the provided context and call finish_answer again."
                         ))
-                        continue  # Break out of tool_call loop, continue agent loop step
+                        continue
 
-                    # If grounded (or on last step), accept the answer
                     citations = []
                     for cite_num in citations_used:
-                        idx = cite_num - 1
+                        idx = int(cite_num) - 1
                         if 0 <= idx < len(self.search_tool.last_chunks):
                             chunk = self.search_tool.last_chunks[idx]
                             citations.append({
@@ -200,12 +215,18 @@ class ChatService:
                     await self.memory.save_turn(session_id, query, final_answer)
                     log.info("Agent finished with structured output", citation_count=len(citations))
                     
-                    return {
+                    result = {
                         "answer": final_answer,
                         "citations": citations,
                         "model": response.model,
                         "provider": response.provider
                     }
+
+                    # TIER 4 CACHE: Add to Semantic Cache (scoped to user)
+                    if citations:
+                        await self.cache.add_to_cache(query, result, user_id=cache_user_scope)
+
+                    return result
 
         return {
             "answer": "I was unable to complete the request within the allowed steps.", 

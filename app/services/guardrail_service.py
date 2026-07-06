@@ -9,6 +9,7 @@ Handles Input/Output validation for the Compound AI System.
 import re
 import structlog
 from app.llm.base import LLMProvider, LLMRequest, LLMMessage
+from app.prompts.registry import PromptRegistry
 
 logger = structlog.get_logger()
 
@@ -23,6 +24,7 @@ class GuardrailService:
             r"system prompt:",
             r"reveal your (system )?prompt"
         ]
+        self.registry = PromptRegistry()
 
     def detect_prompt_injection(self, query: str) -> bool:
         """Checks if the user query matches known prompt injection patterns."""
@@ -46,13 +48,9 @@ class GuardrailService:
 
         context_str = "\n\n".join([c["content"] for c in chunks])
         
-        system_prompt = (
-            "You are a strict fact-checker. Your job is to determine if the 'Answer' is fully supported by the 'Context'. "
-            "If the answer contains facts, numbers, or claims not present in the context, output 'FAIL'. "
-            "If the answer is fully grounded in the context, output 'PASS'. "
-            "If FAIL, provide a one-sentence critique of what was ungrounded. "
-            "Format your response exactly as: PASS or FAIL: <critique>"
-        )
+        # Extract the template string from the registry dictionary
+        prompt_data = self.registry.get("fact_checker_v1")
+        system_prompt = prompt_data["template"]
         
         user_prompt = f"Context:\n{context_str}\n\nAnswer:\n{answer}\n\nIs the answer grounded?"
         
