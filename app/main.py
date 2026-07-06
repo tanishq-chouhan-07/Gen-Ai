@@ -23,6 +23,9 @@ from app.prompts.registry import PromptRegistry
 import logging
 import os
 
+from app.observability.tracing import setup_tracing
+
+
 setup_logging()
 logger = structlog.get_logger()
 settings = get_settings()
@@ -120,6 +123,9 @@ def create_app() -> FastAPI:
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(Exception, global_exception_handler)
+
+    # ── OpenTelemetry Tracing ─────────────────────────────────
+    setup_tracing(app)
 
     # ── Routers ───────────────────────────────────────────────
     app.include_router(health.router, prefix="/api/v1")

@@ -47,6 +47,18 @@ narwhals==2.23.0
 networkx==3.6.1
 numpy==2.5.0
 openai==1.59.3
+opentelemetry-api==1.43.0
+opentelemetry-exporter-otlp==1.43.0
+opentelemetry-exporter-otlp-proto-common==1.43.0
+opentelemetry-exporter-otlp-proto-grpc==1.43.0
+opentelemetry-exporter-otlp-proto-http==1.43.0
+opentelemetry-instrumentation==0.64b0
+opentelemetry-instrumentation-asgi==0.64b0
+opentelemetry-instrumentation-fastapi==0.64b0
+opentelemetry-proto==1.43.0
+opentelemetry-sdk==1.43.0
+opentelemetry-semantic-conventions==0.64b0
+opentelemetry-util-http==0.64b0
 packaging==26.2
 passlib==1.7.4
 pillow==12.3.0
@@ -96,3 +108,4 @@ urllib3==2.7.0
 uvicorn==0.32.1
 watchfiles==1.2.0
 websockets==16.0
+wrapt==2.2.2
