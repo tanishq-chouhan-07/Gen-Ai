@@ -1,7 +1,7 @@
 """
 Gemini LLM Provider Implementation
 
-Uses Google's gemini-2.5-flash model.
+Uses Google's gemini-3.5-flash model.
 Supports Tool Calling by translating generic schemas to Gemini's protobuf format.
 """
 import asyncio

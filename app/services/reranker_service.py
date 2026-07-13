@@ -14,7 +14,6 @@ logger = structlog.get_logger()
 class RerankerService:
     def __init__(self):
         settings = get_settings()
-        # BGE reranker base is fast and accurate enough for CPU/GPU
         self.model = CrossEncoder('BAAI/bge-reranker-base', max_length=512)
         logger.info("CrossEncoder reranker loaded", model="BAAI/bge-reranker-base")
 
@@ -24,20 +23,11 @@ class RerankerService:
 
         log = logger.bind(query_preview=query[:50], initial_chunks=len(chunks))
         
-        # 1. Create pairs of (query, chunk_content) for the CrossEncoder
         pairs = [[query, chunk["content"]] for chunk in chunks]
-        
-        # 2. Score the pairs
         scores = self.model.predict(pairs)
-        
-        # 3. Attach new scores to chunks
         for chunk, score in zip(chunks, scores):
             chunk["rerank_score"] = float(score)
-            
-        # 4. Sort by new rerank score (descending)
         reranked_chunks = sorted(chunks, key=lambda x: x["rerank_score"], reverse=True)
-        
-        # 5. Slice top K
         top_chunks = reranked_chunks[:top_k]
         
         log.info("Reranking complete", returned_chunks=len(top_chunks), 

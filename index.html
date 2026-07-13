@@ -6,161 +6,703 @@
     <title>Gen-Ai Enterprise Document Agent</title>
     <style>
         :root {
-            --bg-color: #f4f7f9;
-            --chat-bg: #ffffff;
-            --user-bubble: #007bff;
-            --user-text: #ffffff;
-            --ai-bubble: #e9ecef;
-            --ai-text: #333333;
-            --citation-bg: #eef6ff;
-            --citation-border: #b8daff;
-            --citation-text: #0056b3;
+            --bg-1: #08111f;
+            --bg-2: #0f1d33;
+            --panel: rgba(10, 18, 33, 0.88);
+            --panel-soft: rgba(18, 28, 48, 0.92);
+            --panel-border: rgba(148, 163, 184, 0.18);
+            --text: #e5eefc;
+            --muted: #9fb1c9;
+            --accent: #7dd3fc;
+            --accent-strong: #38bdf8;
+            --success: #34d399;
+            --danger: #f87171;
+            --warning: #fbbf24;
+            --user-bubble: linear-gradient(135deg, #38bdf8, #2563eb);
+            --user-text: #eff6ff;
+            --ai-bubble: rgba(148, 163, 184, 0.12);
+            --ai-text: #f8fbff;
+            --citation-bg: rgba(125, 211, 252, 0.12);
+            --citation-border: rgba(125, 211, 252, 0.28);
+            --citation-text: #c8f0ff;
+            --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
         }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
+            font-family: "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 28%),
+                radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.12), transparent 24%),
+                linear-gradient(135deg, var(--bg-1), var(--bg-2));
+            color: var(--text);
             margin: 0;
-            padding: 0;
+            padding: 24px;
             display: flex;
             justify-content: center;
-            height: 100vh;
+            min-height: 100vh;
         }
-        .chat-container {
+
+        .app-shell {
             width: 100%;
-            max-width: 800px;
-            background-color: var(--chat-bg);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            max-width: 1320px;
+            display: flex;
+            gap: 20px;
+            align-items: stretch;
+        }
+
+        .sidebar,
+        .main-panel {
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            backdrop-filter: blur(16px);
+            box-shadow: var(--shadow);
+            border-radius: 24px;
+        }
+
+        .sidebar {
+            width: 340px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .main-panel {
+            flex: 1;
+            min-width: 0;
             display: flex;
             flex-direction: column;
             overflow: hidden;
         }
-        .chat-header {
-            background-color: #343a40;
-            color: white;
-            padding: 15px 20px;
-            text-align: center;
-            font-size: 1.1rem;
-            font-weight: 600;
+
+        .brand-block {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
+
+        .eyebrow {
+            font-size: 0.76rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        .brand-title {
+            margin: 0;
+            font-size: 1.75rem;
+            line-height: 1.1;
+        }
+
+        .brand-copy {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .auth-card,
+        .panel-card,
+        .doc-card {
+            background: var(--panel-soft);
+            border: 1px solid var(--panel-border);
+            border-radius: 20px;
+            padding: 18px;
+        }
+
+        .auth-card h2,
+        .panel-card h2,
+        .doc-card h2 {
+            margin: 0 0 10px;
+            font-size: 1rem;
+        }
+
+        .field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .field-group label {
+            font-size: 0.86rem;
+            color: var(--muted);
+        }
+
+        .text-input,
+        .file-input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 14px;
+            background: rgba(2, 6, 23, 0.4);
+            color: var(--text);
+            outline: none;
+            transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+        }
+
+        .text-input:focus,
+        .file-input:focus {
+            border-color: rgba(125, 211, 252, 0.6);
+            box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.12);
+        }
+
+        .text-input::placeholder {
+            color: #7287a3;
+        }
+
+        .primary-btn,
+        .secondary-btn,
+        .danger-btn {
+            border: none;
+            border-radius: 14px;
+            padding: 12px 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.18s ease, opacity 0.18s ease, background 0.18s ease;
+        }
+
+        .primary-btn:hover,
+        .secondary-btn:hover,
+        .danger-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .primary-btn:disabled,
+        .secondary-btn:disabled,
+        .danger-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .primary-btn {
+            background: linear-gradient(135deg, #38bdf8, #2563eb);
+            color: #eff6ff;
+        }
+
+        .secondary-btn {
+            background: rgba(148, 163, 184, 0.16);
+            color: var(--text);
+        }
+
+        .danger-btn {
+            background: rgba(248, 113, 113, 0.16);
+            color: #fecaca;
+        }
+
+        .status-line {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            margin-top: 10px;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 10px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.14);
+            color: var(--muted);
+            font-size: 0.82rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: var(--muted);
+        }
+
+        .status-pill.success .status-dot {
+            background: var(--success);
+        }
+
+        .status-pill.warning .status-dot {
+            background: var(--warning);
+        }
+
+        .status-pill.danger .status-dot {
+            background: var(--danger);
+        }
+
+        .notice {
+            margin: 0;
+            color: var(--muted);
+            font-size: 0.92rem;
+            line-height: 1.55;
+        }
+
+        .notice strong {
+            color: var(--text);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .topbar {
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--panel-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            background: rgba(8, 17, 31, 0.72);
+        }
+
+        .topbar h1 {
+            margin: 0;
+            font-size: 1.05rem;
+            letter-spacing: 0.02em;
+        }
+
+        .topbar-meta {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .chat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--panel-border);
+        }
+
+        .chat-header h2 {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+
+        .chat-header p {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .chat-shell {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
         .chat-messages {
             flex: 1;
-            padding: 20px;
+            padding: 22px 24px;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 14px;
         }
+
         .message {
-            max-width: 75%;
-            padding: 12px 16px;
+            max-width: min(78%, 720px);
+            padding: 14px 16px;
             border-radius: 18px;
-            line-height: 1.5;
-            font-size: 0.95rem;
+            line-height: 1.6;
+            font-size: 0.96rem;
             position: relative;
             word-wrap: break-word;
+            border: 1px solid transparent;
+            animation: fade-up 0.2s ease;
         }
+
         .message.user {
             align-self: flex-end;
-            background-color: var(--user-bubble);
+            background: var(--user-bubble);
             color: var(--user-text);
-            border-bottom-right-radius: 4px;
+            border-bottom-right-radius: 5px;
         }
+
         .message.ai {
             align-self: flex-start;
-            background-color: var(--ai-bubble);
+            background: var(--ai-bubble);
             color: var(--ai-text);
-            border-bottom-left-radius: 4px;
+            border-color: rgba(148, 163, 184, 0.14);
+            border-bottom-left-radius: 5px;
         }
-        .message.ai strong {
-            font-weight: 600;
+
+        .message strong {
+            font-weight: 700;
         }
+
         .citations-container {
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid #d1d5db;
-            font-size: 0.8rem;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(148, 163, 184, 0.18);
+            font-size: 0.82rem;
         }
+
         .citation-chip {
             display: inline-block;
             background-color: var(--citation-bg);
             color: var(--citation-text);
             border: 1px solid var(--citation-border);
-            padding: 4px 8px;
-            border-radius: 12px;
-            margin-right: 5px;
-            margin-bottom: 5px;
+            padding: 5px 9px;
+            border-radius: 999px;
+            margin-right: 6px;
+            margin-bottom: 6px;
             text-decoration: none;
-            cursor: pointer;
-            transition: background-color 0.2s;
+            cursor: help;
         }
-        .citation-chip:hover {
-            background-color: #dbeaff;
-        }
+
         .chat-input-area {
-            padding: 15px 20px;
-            background-color: #f8f9fa;
-            border-top: 1px solid #dee2e6;
+            padding: 18px 24px 24px;
+            border-top: 1px solid var(--panel-border);
             display: flex;
-            gap: 10px;
+            gap: 12px;
+            background: rgba(8, 17, 31, 0.75);
         }
+
         .chat-input {
             flex: 1;
-            padding: 12px 15px;
-            border: 1px solid #ced4da;
-            border-radius: 24px;
-            font-size: 0.95rem;
+            padding: 14px 16px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 16px;
+            font-size: 0.96rem;
             outline: none;
-            transition: border-color 0.2s;
+            background: rgba(2, 6, 23, 0.45);
+            color: var(--text);
         }
+
         .chat-input:focus {
-            border-color: var(--user-bubble);
+            border-color: rgba(125, 211, 252, 0.6);
+            box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.12);
         }
-        .send-btn {
-            background-color: var(--user-bubble);
-            color: white;
-            border: none;
-            padding: 0 25px;
-            border-radius: 24px;
-            font-size: 0.95rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background-color 0.2s;
+
+        .typing-indicator,
+        .helper-text,
+        .error-text,
+        .section-label {
+            color: var(--muted);
+            font-size: 0.86rem;
         }
-        .send-btn:hover {
-            background-color: #0056b3;
-        }
-        .send-btn:disabled {
-            background-color: #a0c4ff;
-            cursor: not-allowed;
-        }
+
         .typing-indicator {
-            font-size: 0.8rem;
-            color: #6c757d;
-            margin-left: 15px;
-            margin-bottom: 10px;
+            padding: 0 24px 8px;
             display: none;
+        }
+
+        .error-text {
+            color: #fecaca;
+            min-height: 1.2em;
+            margin-top: 8px;
+        }
+
+        .section-label {
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            font-size: 0.72rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .stack {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .doc-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 420px;
+            overflow: auto;
+            padding-right: 4px;
+        }
+
+        .doc-item {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px;
+            border-radius: 16px;
+            background: rgba(2, 6, 23, 0.36);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+        }
+
+        .doc-item strong {
+            font-size: 0.95rem;
+        }
+
+        .doc-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 0.82rem;
+        }
+
+        .doc-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .login-shell {
+            width: 100%;
+            max-width: 1320px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .login-card {
+            width: min(100%, 480px);
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 24px;
+            box-shadow: var(--shadow);
+            padding: 28px;
+        }
+
+        .login-card h1 {
+            margin: 0 0 8px;
+            font-size: 1.5rem;
+        }
+
+        .login-card p {
+            margin: 0 0 22px;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .split-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .app-layout {
+            display: none;
+        }
+
+        .app-layout.is-authenticated {
+            display: flex;
+        }
+
+        .login-layout.is-unauthenticated {
+            display: flex;
+        }
+
+        .login-layout,
+        .app-layout {
+            width: 100%;
+        }
+
+        .role-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.16);
+            color: var(--text);
+            font-size: 0.84rem;
+            white-space: nowrap;
+        }
+
+        .role-badge.admin {
+            background: rgba(52, 211, 153, 0.16);
+        }
+
+        .role-badge.user {
+            background: rgba(56, 189, 248, 0.16);
+        }
+
+        .auth-shell {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .login-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .tiny {
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
+
+        .section-space {
+            margin-top: 8px;
+        }
+
+        @keyframes fade-up {
+            from {
+                opacity: 0;
+                transform: translateY(6px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 1080px) {
+            body {
+                padding: 16px;
+            }
+
+            .app-shell {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 720px) {
+            body {
+                padding: 12px;
+            }
+
+            .chat-messages,
+            .chat-input-area,
+            .topbar,
+            .chat-header {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+
+            .message {
+                max-width: 100%;
+            }
+
+            .topbar,
+            .chat-header,
+            .login-footer {
+                flex-direction: column;
+                align-items: flex-start;
+            }
         }
     </style>
 </head>
 <body>
 
-<div class="chat-container">
-    <div class="chat-header">
-        Enterprise Document AI Agent
-    </div>
-    
-    <div class="chat-messages" id="chatMessages">
-        <div class="message ai">
-            Hello! I am your enterprise document assistant. Ask me anything about the uploaded documents.
-        </div>
-    </div>
-    
-    <div class="typing-indicator" id="typingIndicator">Agent is thinking...</div>
+<div class="login-shell login-layout is-unauthenticated" id="loginLayout">
+    <div class="login-card">
+        <div class="eyebrow">Enterprise Access</div>
+        <h1>Sign in to the document agent</h1>
+        <p>Use your username and password to obtain a bearer token. The app will keep the session locally and include the token on every protected request.</p>
 
-    <div class="chat-input-area">
-        <input type="text" class="chat-input" id="chatInput" placeholder="Ask a question..." autocomplete="off">
-        <button class="send-btn" id="sendBtn">Send</button>
+        <form class="login-form" id="loginForm">
+            <div class="field-group">
+                <label for="loginUsername">Username</label>
+                <input class="text-input" id="loginUsername" name="username" type="text" autocomplete="username" placeholder="your.username">
+            </div>
+            <div class="field-group">
+                <label for="loginPassword">Password</label>
+                <input class="text-input" id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Your password">
+            </div>
+            <div class="login-footer">
+                <button class="primary-btn" type="submit" id="loginBtn">Sign in</button>
+                <span class="tiny">OAuth2 password flow against <strong>/api/v1/auth/login</strong></span>
+            </div>
+            <div class="error-text" id="loginError"></div>
+        </form>
     </div>
+</div>
+
+<div class="app-layout" id="appLayout">
+    <aside class="sidebar">
+        <div class="brand-block">
+            <div class="eyebrow">Gen-Ai Workspace</div>
+            <h1 class="brand-title">Enterprise Document AI Agent</h1>
+            <p class="brand-copy">Secure document Q&A with role-aware controls. Chat requires an authenticated bearer token. Document management stays visible only to admins.</p>
+        </div>
+
+        <div class="auth-card">
+            <h2>Session</h2>
+            <div class="status-line" id="sessionPills"></div>
+            <div class="stack section-space">
+                <div class="split-actions">
+                    <button class="secondary-btn" type="button" id="refreshDocumentsBtn">Refresh documents</button>
+                    <button class="danger-btn" type="button" id="logoutBtn">Logout</button>
+                </div>
+                <p class="notice" id="authNotice">You must be signed in to chat or load documents.</p>
+            </div>
+        </div>
+
+        <div class="doc-card" id="adminPanel">
+            <h2>Admin document controls</h2>
+            <p class="notice">Only users with the <strong>admin</strong> role can upload or delete documents.</p>
+
+            <div class="stack section-space">
+                <div class="field-group">
+                    <label for="documentFile">Upload a PDF</label>
+                    <input class="file-input" id="documentFile" type="file" accept="application/pdf">
+                </div>
+                <div class="split-actions">
+                    <button class="primary-btn" type="button" id="uploadBtn">Upload</button>
+                </div>
+                <div class="error-text" id="documentError"></div>
+            </div>
+
+            <div class="section-space">
+                <div class="section-label">Indexed documents</div>
+                <div class="doc-list" id="documentList"></div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-panel">
+        <div class="topbar">
+            <div>
+                <h1>Authenticated chat</h1>
+                <div class="helper-text">Bearer token attached to each request. 401 responses will log you out automatically.</div>
+            </div>
+            <div class="topbar-meta" id="identitySummary"></div>
+        </div>
+
+        <div class="chat-shell">
+            <div class="chat-header">
+                <div>
+                    <h2>Conversation</h2>
+                    <p>Ask about indexed documents or follow up within the same browser session.</p>
+                </div>
+                <div class="role-badge" id="roleBadge">Guest</div>
+            </div>
+
+            <div class="chat-messages" id="chatMessages">
+                <div class="message ai">
+                    Sign in to start chatting with the document assistant.
+                </div>
+            </div>
+
+            <div class="typing-indicator" id="typingIndicator">Agent is thinking...</div>
+
+            <div class="chat-input-area">
+                <input type="text" class="chat-input" id="chatInput" placeholder="Ask a question..." autocomplete="off" disabled>
+                <button class="primary-btn" id="sendBtn" disabled>Send</button>
+            </div>
+        </div>
+    </main>
 </div>
 
 <script>
@@ -168,26 +710,315 @@
     const chatInput = document.getElementById('chatInput');
     const sendBtn = document.getElementById('sendBtn');
     const typingIndicator = document.getElementById('typingIndicator');
+    const loginLayout = document.getElementById('loginLayout');
+    const appLayout = document.getElementById('appLayout');
+    const loginForm = document.getElementById('loginForm');
+    const loginError = document.getElementById('loginError');
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const refreshDocumentsBtn = document.getElementById('refreshDocumentsBtn');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const documentFile = document.getElementById('documentFile');
+    const documentList = document.getElementById('documentList');
+    const documentError = document.getElementById('documentError');
+    const authNotice = document.getElementById('authNotice');
+    const roleBadge = document.getElementById('roleBadge');
+    const identitySummary = document.getElementById('identitySummary');
+    const sessionPills = document.getElementById('sessionPills');
+    const adminPanel = document.getElementById('adminPanel');
 
-    // Generate a random session ID for this browser session
-    // This allows you to test conversational memory (e.g., "What version of it?")
-    const sessionId = "frontend_" + Math.random().toString(36).substring(2, 10);
+    const API_BASE = 'http://localhost:8000/api/v1';
+    const STORAGE_KEYS = {
+        token: 'genai_access_token',
+        user: 'genai_user_profile',
+        session: 'genai_session_id'
+    };
+
+    let accessToken = localStorage.getItem(STORAGE_KEYS.token) || '';
+    let currentUser = loadStoredUser();
+    let sessionId = localStorage.getItem(STORAGE_KEYS.session) || createSessionId();
+
+    localStorage.setItem(STORAGE_KEYS.session, sessionId);
+
+    function createSessionId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return `frontend_${window.crypto.randomUUID()}`;
+        }
+
+        return 'frontend_' + Math.random().toString(36).substring(2, 10);
+    }
+
+    function loadStoredUser() {
+        try {
+            const stored = localStorage.getItem(STORAGE_KEYS.user);
+            return stored ? JSON.parse(stored) : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function decodeJwtPayload(token) {
+        try {
+            const payloadBase64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+            const padded = payloadBase64.padEnd(payloadBase64.length + ((4 - (payloadBase64.length % 4)) % 4), '=');
+            return JSON.parse(atob(padded));
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function isTokenExpired(token) {
+        const payload = decodeJwtPayload(token);
+        if (!payload || !payload.exp) {
+            return false;
+        }
+
+        return Date.now() >= payload.exp * 1000;
+    }
+
+    function setStoredAuth(token, user) {
+        accessToken = token;
+        currentUser = user;
+
+        if (token) {
+            localStorage.setItem(STORAGE_KEYS.token, token);
+        } else {
+            localStorage.removeItem(STORAGE_KEYS.token);
+        }
+
+        if (user) {
+            localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user));
+        } else {
+            localStorage.removeItem(STORAGE_KEYS.user);
+        }
+    }
+
+    function logout(message = 'Session ended. Sign in again to continue.') {
+        setStoredAuth('', null);
+        accessToken = '';
+        currentUser = null;
+        renderAuthState();
+        authNotice.textContent = message;
+        documentError.textContent = '';
+        loginError.textContent = '';
+        addMessageToUI('You were signed out. Please log in again to continue.', 'ai');
+    }
+
+    function getAuthHeaders(contentType = true) {
+        const headers = {};
+
+        if (contentType) {
+            headers['Content-Type'] = 'application/json';
+        }
+
+        if (accessToken) {
+            headers.Authorization = `Bearer ${accessToken}`;
+        }
+
+        return headers;
+    }
+
+    function getDisplayName(user) {
+        if (!user) {
+            return 'Guest';
+        }
+
+        return user.username || 'Authenticated user';
+    }
+
+    function getRole(user) {
+        return user && user.role ? user.role : 'guest';
+    }
+
+    function renderSessionSummary() {
+        sessionPills.innerHTML = '';
+
+        const items = [];
+
+        items.push({ label: `Session ${sessionId.slice(-6)}`, className: 'success' });
+
+        if (currentUser) {
+            items.push({ label: getDisplayName(currentUser), className: 'success' });
+            items.push({ label: getRole(currentUser), className: getRole(currentUser) === 'admin' ? 'success' : 'warning' });
+        } else {
+            items.push({ label: 'Signed out', className: 'warning' });
+        }
+
+        items.forEach((item) => {
+            const pill = document.createElement('div');
+            pill.className = `status-pill ${item.className}`;
+
+            const dot = document.createElement('span');
+            dot.className = 'status-dot';
+
+            const text = document.createElement('span');
+            text.textContent = item.label;
+
+            pill.appendChild(dot);
+            pill.appendChild(text);
+            sessionPills.appendChild(pill);
+        });
+    }
+
+    function renderIdentitySummary() {
+        identitySummary.innerHTML = '';
+
+        if (!currentUser) {
+            const guest = document.createElement('div');
+            guest.className = 'status-pill warning';
+            guest.textContent = 'Not authenticated';
+            identitySummary.appendChild(guest);
+            return;
+        }
+
+        const userPill = document.createElement('div');
+        userPill.className = 'status-pill success';
+        userPill.textContent = getDisplayName(currentUser);
+
+        const rolePill = document.createElement('div');
+        rolePill.className = `status-pill ${getRole(currentUser) === 'admin' ? 'success' : 'warning'}`;
+        rolePill.textContent = `role: ${getRole(currentUser)}`;
+
+        identitySummary.appendChild(userPill);
+        identitySummary.appendChild(rolePill);
+    }
+
+    function renderAuthState() {
+        const authenticated = Boolean(accessToken) && !isTokenExpired(accessToken) && Boolean(currentUser);
+
+        if (!authenticated && accessToken) {
+            logout('Your session expired. Sign in again to continue.');
+            return;
+        }
+
+        loginLayout.classList.toggle('hidden', authenticated);
+        loginLayout.classList.toggle('is-unauthenticated', !authenticated);
+        appLayout.classList.toggle('hidden', !authenticated);
+        appLayout.classList.toggle('is-authenticated', authenticated);
+
+        chatInput.disabled = !authenticated;
+        sendBtn.disabled = !authenticated;
+        refreshDocumentsBtn.disabled = !authenticated;
+        uploadBtn.disabled = !authenticated || getRole(currentUser) !== 'admin';
+        documentFile.disabled = !authenticated || getRole(currentUser) !== 'admin';
+        logoutBtn.disabled = !authenticated;
+        roleBadge.textContent = authenticated ? `Signed in as ${getRole(currentUser)}` : 'Guest';
+        roleBadge.className = `role-badge ${authenticated ? getRole(currentUser) : 'user'}`;
+        authNotice.innerHTML = authenticated
+            ? `Signed in as <strong>${escapeHtml(getDisplayName(currentUser))}</strong>. Chat and document actions now use your bearer token.`
+            : 'You must be signed in to chat or load documents.';
+        adminPanel.style.opacity = authenticated && getRole(currentUser) === 'admin' ? '1' : '0.72';
+        adminPanel.style.pointerEvents = authenticated && getRole(currentUser) === 'admin' ? 'auto' : 'none';
+
+        if (authenticated && getRole(currentUser) !== 'admin') {
+            documentList.innerHTML = '<div class="notice">Document management is restricted to admin users. You can still chat and view the indexed document catalog.</div>';
+        }
+
+        renderSessionSummary();
+        renderIdentitySummary();
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function setBusy(button, busy, label) {
+        button.disabled = busy;
+        if (label) {
+            button.dataset.originalLabel = button.dataset.originalLabel || button.textContent;
+            button.textContent = busy ? label : button.dataset.originalLabel;
+        }
+    }
+
+    async function authFetch(url, options = {}) {
+        const response = await fetch(url, {
+            ...options,
+            headers: {
+                ...(options.headers || {}),
+                ...getAuthHeaders(options.body instanceof FormData ? false : true),
+            },
+        });
+
+        if (response.status === 401) {
+            logout('Your session was rejected by the server. Sign in again.');
+            throw new Error('Unauthorized');
+        }
+
+        return response;
+    }
+
+    async function login(event) {
+        event.preventDefault();
+        loginError.textContent = '';
+
+        const username = loginForm.username.value.trim();
+        const password = loginForm.password.value;
+
+        if (!username || !password) {
+            loginError.textContent = 'Enter both username and password.';
+            return;
+        }
+
+        setBusy(loginBtn, true, 'Signing in...');
+
+        try {
+            const response = await fetch(`${API_BASE}/auth/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({ username, password }).toString(),
+            });
+
+            if (!response.ok) {
+                const detail = await response.json().catch(() => ({}));
+                throw new Error(detail.detail || `Login failed (${response.status})`);
+            }
+
+            const tokenPayload = await response.json();
+            const jwtPayload = decodeJwtPayload(tokenPayload.access_token);
+
+            if (!jwtPayload || !jwtPayload.sub) {
+                throw new Error('Login succeeded but the token payload is invalid.');
+            }
+
+            const user = {
+                username: jwtPayload.sub,
+                role: jwtPayload.role || 'user',
+            };
+
+            setStoredAuth(tokenPayload.access_token, user);
+            renderAuthState();
+            loginForm.reset();
+            loginError.textContent = '';
+            authNotice.textContent = `Welcome, ${user.username}. Your ${user.role} session is active.`;
+            chatMessages.innerHTML = '';
+            addMessageToUI(`Signed in as **${escapeHtml(user.username)}** with role **${escapeHtml(user.role)}**.`, 'ai');
+            await refreshDocuments();
+        } catch (error) {
+            loginError.textContent = error.message || 'Unable to sign in.';
+        } finally {
+            setBusy(loginBtn, false);
+        }
+    }
 
     async function sendMessage() {
         const query = chatInput.value.trim();
         if (!query) return;
 
-        // Disable input and show typing indicator
         chatInput.value = '';
         sendBtn.disabled = true;
         typingIndicator.style.display = 'block';
 
-        // Add user message to UI
         addMessageToUI(query, 'user');
 
         try {
-            // Call the FastAPI backend
-            const response = await fetch('http://localhost:8000/api/v1/chat', {
+            const response = await authFetch(`${API_BASE}/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -200,19 +1031,19 @@
             });
 
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                const detail = await response.json().catch(() => ({}));
+                throw new Error(detail.detail || `HTTP error ${response.status}`);
             }
 
             const data = await response.json();
-            
-            // Add AI message to UI with citations
             addMessageToUI(data.answer, 'ai', data.citations);
 
         } catch (error) {
-            console.error("Error calling API:", error);
-            addMessageToUI("Oops! Something went wrong connecting to the server.", 'ai');
+            if (error.message !== 'Unauthorized') {
+                console.error('Error calling API:', error);
+                addMessageToUI('Oops! Something went wrong connecting to the server.', 'ai');
+            }
         } finally {
-            // Re-enable input and hide typing indicator
             sendBtn.disabled = false;
             typingIndicator.style.display = 'none';
             chatInput.focus();
@@ -222,46 +1053,209 @@
     function addMessageToUI(text, sender, citations = []) {
         const messageDiv = document.createElement('div');
         messageDiv.classList.add('message', sender);
-        
-        // Basic sanitization (replace < and > to prevent raw HTML injection)
-        let safeText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        
-        // Convert markdown bold **text** to <strong>text</strong> for better display
+
+        let safeText = escapeHtml(text);
         safeText = safeText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        
         messageDiv.innerHTML = safeText;
 
-        // If AI message has citations, render them
         if (sender === 'ai' && citations.length > 0) {
             const citationsDiv = document.createElement('div');
             citationsDiv.classList.add('citations-container');
-            
+
             citations.forEach(cite => {
                 const chip = document.createElement('span');
                 chip.classList.add('citation-chip');
                 chip.innerHTML = `[${cite.citation_number}] ${cite.filename} (p. ${cite.page_number})`;
-                
-                // Tooltip with preview
                 chip.title = `${cite.content_preview}...\nRelevance: ${(cite.relevance_score * 100).toFixed(1)}%`;
-                
                 citationsDiv.appendChild(chip);
             });
-            
+
             messageDiv.appendChild(citationsDiv);
         }
 
         chatMessages.appendChild(messageDiv);
-        // Scroll to bottom
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
+    async function refreshDocuments() {
+        documentError.textContent = '';
+
+        if (!accessToken || !currentUser) {
+            documentList.innerHTML = '<div class="notice">Sign in to view documents.</div>';
+            return;
+        }
+
+        if (getRole(currentUser) !== 'admin') {
+            documentList.innerHTML = '<div class="notice">Admins can upload and delete documents here. Non-admin users can still chat against the indexed corpus.</div>';
+            return;
+        }
+
+        documentList.innerHTML = '<div class="notice">Loading documents...</div>';
+
+        try {
+            const response = await authFetch(`${API_BASE}/documents`, { method: 'GET' });
+
+            if (!response.ok) {
+                const detail = await response.json().catch(() => ({}));
+                throw new Error(detail.detail || `Unable to load documents (${response.status})`);
+            }
+
+            const data = await response.json();
+            renderDocumentList(data.documents || []);
+        } catch (error) {
+            documentError.textContent = error.message || 'Unable to load documents.';
+            documentList.innerHTML = '<div class="notice">No documents available.</div>';
+        }
+    }
+
+    function renderDocumentList(documents) {
+        if (!documents.length) {
+            documentList.innerHTML = '<div class="notice">No indexed documents found.</div>';
+            return;
+        }
+
+        documentList.innerHTML = '';
+
+        documents.forEach((doc) => {
+            const item = document.createElement('div');
+            item.className = 'doc-item';
+
+            const title = document.createElement('strong');
+            title.textContent = doc.original_filename || doc.filename;
+
+            const meta = document.createElement('div');
+            meta.className = 'doc-meta';
+            meta.innerHTML = `
+                <span>Status: ${escapeHtml(doc.status)}</span>
+                <span>Pages: ${doc.total_pages ?? 'n/a'}</span>
+                <span>Chunks: ${doc.total_chunks ?? 'n/a'}</span>
+                <span>Version: ${doc.version}</span>
+            `;
+
+            const actions = document.createElement('div');
+            actions.className = 'doc-actions';
+
+            const idChip = document.createElement('div');
+            idChip.className = 'status-pill';
+            idChip.textContent = doc.id.slice(0, 8);
+
+            actions.appendChild(idChip);
+
+            if (getRole(currentUser) === 'admin') {
+                const deleteButton = document.createElement('button');
+                deleteButton.className = 'danger-btn';
+                deleteButton.type = 'button';
+                deleteButton.textContent = 'Delete';
+                deleteButton.addEventListener('click', () => deleteDocument(doc.id));
+                actions.appendChild(deleteButton);
+            }
+
+            item.appendChild(title);
+            item.appendChild(meta);
+            item.appendChild(actions);
+            documentList.appendChild(item);
+        });
+    }
+
+    async function uploadDocument() {
+        documentError.textContent = '';
+
+        if (!currentUser || getRole(currentUser) !== 'admin') {
+            documentError.textContent = 'Only admins can upload documents.';
+            return;
+        }
+
+        const file = documentFile.files && documentFile.files[0];
+        if (!file) {
+            documentError.textContent = 'Choose a PDF file first.';
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        setBusy(uploadBtn, true, 'Uploading...');
+
+        try {
+            const response = await authFetch(`${API_BASE}/documents/upload`, {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const detail = await response.json().catch(() => ({}));
+                throw new Error(detail.detail || `Upload failed (${response.status})`);
+            }
+
+            const data = await response.json();
+            documentFile.value = '';
+            documentError.textContent = '';
+            addMessageToUI(`Upload started for **${escapeHtml(data.filename)}**. Document ID: ${escapeHtml(data.document_id)}.`, 'ai');
+            await refreshDocuments();
+        } catch (error) {
+            documentError.textContent = error.message || 'Upload failed.';
+        } finally {
+            setBusy(uploadBtn, false);
+        }
+    }
+
+    async function deleteDocument(documentId) {
+        documentError.textContent = '';
+
+        if (!currentUser || getRole(currentUser) !== 'admin') {
+            documentError.textContent = 'Only admins can delete documents.';
+            return;
+        }
+
+        const confirmed = window.confirm('Delete this document and its vectors? This cannot be undone.');
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            const response = await authFetch(`${API_BASE}/documents/${documentId}`, {
+                method: 'DELETE',
+            });
+
+            if (!response.ok && response.status !== 204) {
+                const detail = await response.json().catch(() => ({}));
+                throw new Error(detail.detail || `Delete failed (${response.status})`);
+            }
+
+            await refreshDocuments();
+            addMessageToUI(`Document **${escapeHtml(documentId)}** was deleted.`, 'ai');
+        } catch (error) {
+            documentError.textContent = error.message || 'Delete failed.';
+        }
+    }
+
+    function bootstrapAuth() {
+        if (accessToken && (!currentUser || isTokenExpired(accessToken))) {
+            logout('Stored credentials expired or were incomplete. Sign in again.');
+            return;
+        }
+
+        renderAuthState();
+
+        if (currentUser && accessToken) {
+            addMessageToUI(`Restored session for **${escapeHtml(getDisplayName(currentUser))}**.`, 'ai');
+            refreshDocuments().catch(() => {});
+        }
+    }
+
     // Event Listeners
+    loginForm.addEventListener('submit', login);
     sendBtn.addEventListener('click', sendMessage);
     chatInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             sendMessage();
         }
     });
+    logoutBtn.addEventListener('click', () => logout('You signed out successfully.'));
+    refreshDocumentsBtn.addEventListener('click', () => refreshDocuments());
+    uploadBtn.addEventListener('click', uploadDocument);
+
+    bootstrapAuth();
 </script>
 
 </body>

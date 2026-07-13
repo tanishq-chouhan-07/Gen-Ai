@@ -263,7 +263,7 @@ EMBEDDING_PROVIDER="gemini"
 
 # Gemini (Development)
 GEMINI_API_KEY="your-gemini-api-key-here"
-GEMINI_MODEL="gemini-2.5-flash"
+GEMINI_MODEL="gemini-3.5-flash"
 GEMINI_EMBEDDING_MODEL="models/text-embedding-004"
 
 # Qdrant
@@ -347,7 +347,7 @@ class Settings(BaseSettings):
 
     # ── Gemini (Development) ──────────────────────────────────
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash"
     gemini_embedding_model: str = "models/text-embedding-004"
 
     # ── Amazon Bedrock (Production) ───────────────────────────
@@ -437,8 +437,8 @@ class ModelConfig:
 MODEL_TABLE: dict[str, ModelConfig] = {
 
     # ── Gemini Models (Development) ───────────────────────────
-    "gemini-2.5-flash": ModelConfig(
-        model_id="gemini-2.5-flash",
+    "gemini-3.5-flash": ModelConfig(
+        model_id="gemini-3.5-flash",
         provider="gemini",
         context_window=1_000_000,
         max_output_tokens=8192,
@@ -530,7 +530,7 @@ Expected output:
 ```
 App: Document AI Agent
 Provider: gemini
-Model: gemini-2.5-flash
+Model: gemini-3.5-flash
 ```
 
 ---
@@ -865,7 +865,7 @@ Expected:
     {
       "name": "configuration",
       "status": "healthy",
-      "details": "Provider: gemini, Model: gemini-2.5-flash"
+      "details": "Provider: gemini, Model: gemini-3.5-flash"
     }
   ],
   "timestamp": "2024-01-15T10:30:00Z"

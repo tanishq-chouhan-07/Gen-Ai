@@ -20,8 +20,8 @@ class ModelConfig:
 
 MODEL_TABLE: dict[str, ModelConfig] = {
 
-    "gemini-2.5-flash": ModelConfig(
-        model_id="gemini-2.5-flash",
+    "gemini-3.5-flash": ModelConfig(
+        model_id="gemini-3.5-flash",
         provider="gemini",
         context_window=1_000_000,
         max_output_tokens=8192,

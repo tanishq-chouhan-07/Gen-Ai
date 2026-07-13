@@ -148,7 +148,7 @@ Create `app/llm/providers/gemini_provider.py`:
 """
 Gemini LLM Provider Implementation
 
-Uses Google's gemini-2.5-flash model.
+Uses Google's gemini-3.5-flash model.
 Used in development. Replaced by BedrockProvider in production.
 """
 import asyncio
@@ -672,7 +672,7 @@ asyncio.run(test_llm())
 
 Expected Output:
 ```
-Created LLM Provider: gemini-2.5-flash
+Created LLM Provider: gemini-3.5-flash
 Built 2 messages
 System prompt length: 4XX chars
 

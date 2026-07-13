@@ -1056,7 +1056,7 @@ class Settings(BaseSettings):
     
     # Gemini (Development)
     gemini_api_key: str = Field(default="", env="GEMINI_API_KEY")
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash"
     gemini_embedding_model: str = "models/text-embedding-004"
     
     # Amazon Bedrock (Production)
@@ -1129,8 +1129,8 @@ class ModelConfig:
 # The Model Registry - single source of truth for all model configs
 MODEL_TABLE: Dict[str, ModelConfig] = {
     # Gemini Models
-    "gemini-2.5-flash": ModelConfig(
-        model_id="gemini-2.5-flash",
+    "gemini-3.5-flash": ModelConfig(
+        model_id="gemini-3.5-flash",
         provider="gemini",
         context_window=1_000_000,
         max_output_tokens=8192,
@@ -3975,7 +3975,7 @@ LOG_LEVEL=DEBUG
 LLM_PROVIDER=gemini
 EMBEDDING_PROVIDER=gemini
 GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.5-flash
 GEMINI_EMBEDDING_MODEL=models/text-embedding-004
 
 # Infrastructure (Docker Compose defaults)
@@ -4319,7 +4319,7 @@ Response 200:
       "relevance_score": 0.87
     }
   ],
-  "model": "gemini-2.5-flash",
+  "model": "gemini-3.5-flash",
   "provider": "gemini",
   "input_tokens": 1245,
   "output_tokens": 89,
